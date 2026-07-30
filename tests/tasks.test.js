@@ -1,0 +1,181 @@
+import assert from 'node:assert/strict'
+import { rmSync } from 'node:fs'
+import test, { after, before } from 'node:test'
+
+process.env.JWT_SECRET ??= 'test-secret'
+const DB = 'test-tasks.db'
+rmSync(DB, { force: true })
+
+const { buildApp } = await import('../src/composition.js')
+const { app, close } = buildApp({ dbPath: DB, jwtSecret: 'test-secret' })
+const server = app.listen(0)
+const url = `http://localhost:${server.address().port}`
+
+after(() => {
+  server.close()
+  close()
+  for (const suffix of ['', '-wal', '-shm']) rmSync(`${DB}${suffix}`, { force: true })
+})
+
+let auth
+let otherAuth
+
+const call = (method, path, { body, token } = {}) =>
+  fetch(url + path, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: `Bearer ${token}` }),
+    },
+    ...(body && { body: JSON.stringify(body) }),
+  })
+
+const newTask = (body, token = auth) => call('POST', '/tasks', { body, token })
+
+before(async () => {
+  const one = await call('POST', '/auth/register', {
+    body: { email: 'tareas@nexgen.mx', password: 'supersecreta1', name: 'Omar' },
+  })
+  auth = (await one.json()).token
+
+  const two = await call('POST', '/auth/register', {
+    body: { email: 'otro@nexgen.mx', password: 'supersecreta1', name: 'Ana' },
+  })
+  otherAuth = (await two.json()).token
+})
+
+test('todas las rutas de tareas exigen token', async () => {
+  assert.equal((await call('GET', '/tasks')).status, 401)
+  assert.equal((await call('POST', '/tasks', { body: { title: 'x' } })).status, 401)
+  assert.equal((await call('GET', '/me/today')).status, 401)
+})
+
+test('crea una tarea con defaults y deriva la fecha local', async () => {
+  const res = await newTask({ title: 'Terminar el reporte', dueAt: '2026-08-01T18:00:00-06:00' })
+  assert.equal(res.status, 201)
+
+  const { task } = await res.json()
+  assert.equal(task.size, 'medium')
+  assert.equal(task.status, 'pending')
+  assert.equal(task.suggestedMinutes, 25)
+  assert.equal(task.dueDate, '2026-08-01', 'la fecha local sale del ISO que mando el cliente')
+  assert.equal(task.elapsedSeconds, 0)
+  assert.equal(task.running, false)
+})
+
+test('rechaza datos invalidos', async () => {
+  const sinTitulo = await newTask({ title: '   ' })
+  assert.equal(sinTitulo.status, 400)
+  assert.ok((await sinTitulo.json()).fields.title)
+
+  assert.equal((await newTask({ title: 'x', size: 'gigante' })).status, 400)
+  assert.equal((await newTask({ title: 'x', focusArea: 'inventado' })).status, 400)
+  assert.equal((await newTask({ title: 'x', dueAt: 'mañana' })).status, 400)
+  assert.equal((await newTask({ title: 'a'.repeat(121) })).status, 400)
+})
+
+test('lista filtrando por fecha, estado y foco', async () => {
+  await newTask({ title: 'Hoy A', dueAt: '2026-08-02T09:00:00-06:00', focusArea: 'work' })
+  await newTask({ title: 'Hoy B', dueAt: '2026-08-02T20:00:00-06:00', focusArea: 'health' })
+  await newTask({ title: 'Sin fecha' })
+
+  const delDia = await (await call('GET', '/tasks?date=2026-08-02', { token: auth })).json()
+  assert.equal(delDia.tasks.length, 2)
+  assert.deepEqual(delDia.tasks.map((t) => t.title), ['Hoy A', 'Hoy B'], 'ordenadas por hora')
+
+  const porFoco = await (await call('GET', '/tasks?focusArea=health', { token: auth })).json()
+  assert.deepEqual(porFoco.tasks.map((t) => t.title), ['Hoy B'])
+
+  const pendientes = await (await call('GET', '/tasks?status=pending', { token: auth })).json()
+  assert.ok(pendientes.tasks.length >= 3)
+})
+
+test('completar sella la hora y reabrir la borra', async () => {
+  const { task } = await (await newTask({ title: 'Lavar trastes' })).json()
+
+  const hecha = await (
+    await call('PATCH', `/tasks/${task.id}`, { body: { status: 'done' }, token: auth })
+  ).json()
+  assert.equal(hecha.task.status, 'done')
+  assert.ok(hecha.task.completedAt)
+  assert.equal(hecha.task.title, 'Lavar trastes', 'el patch parcial no borra lo que no viene')
+
+  const reabierta = await (
+    await call('PATCH', `/tasks/${task.id}`, { body: { status: 'pending' }, token: auth })
+  ).json()
+  assert.equal(reabierta.task.completedAt, null)
+})
+
+test('el timer acumula y solo permite uno corriendo', async () => {
+  const { task } = await (await newTask({ title: 'Sesion de foco' })).json()
+  const otra = (await (await newTask({ title: 'Otra cosa' })).json()).task
+
+  const arrancada = await (
+    await call('POST', `/tasks/${task.id}/timer`, { body: { action: 'start' }, token: auth })
+  ).json()
+  assert.equal(arrancada.task.running, true)
+
+  const choque = await call('POST', `/tasks/${otra.id}/timer`, { body: { action: 'start' }, token: auth })
+  assert.equal(choque.status, 409, 'dos timers a la vez no')
+
+  const parada = await (
+    await call('POST', `/tasks/${task.id}/timer`, { body: { action: 'stop' }, token: auth })
+  ).json()
+  assert.equal(parada.task.running, false)
+  assert.ok(parada.task.elapsedSeconds >= 0)
+
+  const malaAccion = await call('POST', `/tasks/${task.id}/timer`, { body: { action: 'pausa' }, token: auth })
+  assert.equal(malaAccion.status, 400)
+})
+
+test('/me/today arma el resumen del widget', async () => {
+  const hoy = '2026-08-03'
+  await newTask({ title: 'Primera del dia', dueAt: `${hoy}T08:00:00-06:00` })
+  const segunda = (await (await newTask({ title: 'Segunda', dueAt: `${hoy}T15:00:00-06:00` })).json()).task
+  await call('PATCH', `/tasks/${segunda.id}`, { body: { status: 'done' }, token: auth })
+
+  const today = await (await call('GET', `/me/today?date=${hoy}`, { token: auth })).json()
+  assert.equal(today.date, hoy)
+  assert.equal(today.user.name, 'Omar')
+  assert.deepEqual(today.counts, { total: 2, pending: 1, done: 1 })
+  assert.equal(today.next.title, 'Primera del dia')
+  assert.equal(today.running, null)
+})
+
+test('un usuario no ve ni toca las tareas de otro', async () => {
+  const { task } = await (await newTask({ title: 'Privada' })).json()
+
+  assert.equal((await call('PATCH', `/tasks/${task.id}`, { body: { title: 'Hackeada' }, token: otherAuth })).status, 404)
+  assert.equal((await call('DELETE', `/tasks/${task.id}`, { token: otherAuth })).status, 404)
+
+  const ajenas = await (await call('GET', '/tasks', { token: otherAuth })).json()
+  assert.equal(ajenas.tasks.length, 0)
+})
+
+test('borrar quita la tarea y la segunda vez es 404', async () => {
+  const { task } = await (await newTask({ title: 'Temporal' })).json()
+  assert.equal((await call('DELETE', `/tasks/${task.id}`, { token: auth })).status, 204)
+  assert.equal((await call('DELETE', `/tasks/${task.id}`, { token: auth })).status, 404)
+})
+
+test('registra el push token y lo reasigna si cambia de dueño', async () => {
+  const token = 'ExponentPushToken[abc123]'
+
+  const res = await call('POST', '/me/devices', { body: { token, platform: 'ios' }, token: auth })
+  assert.equal(res.status, 201)
+  assert.equal((await res.json()).device.platform, 'ios')
+
+  const reasignado = await call('POST', '/me/devices', { body: { token, platform: 'ios' }, token: otherAuth })
+  assert.equal(reasignado.status, 201, 'el mismo token no explota, cambia de usuario')
+
+  const malo = await call('POST', '/me/devices', { body: { token: 'abc', platform: 'ios' }, token: auth })
+  assert.equal(malo.status, 400)
+  assert.equal((await call('POST', '/me/devices', { body: { token, platform: 'nokia' }, token: auth })).status, 400)
+})
+
+test('/tasks/catalogs es publico para pintar las opciones', async () => {
+  const catalogs = await (await call('GET', '/tasks/catalogs')).json()
+  assert.deepEqual(catalogs.size, ['quick', 'medium', 'deep'])
+  assert.equal(catalogs.sizeMinutes.deep, 50)
+  assert.ok(catalogs.focusArea.includes('creativity'))
+})

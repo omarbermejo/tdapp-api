@@ -1,7 +1,7 @@
 import { Router } from 'express'
 
-import { UnauthorizedError } from '../../domain/errors.js'
 import { catalogs } from '../../domain/user.js'
+import { requireAuth } from './require-auth.js'
 
 export function createAuthRouter({ useCases, tokens }) {
   const router = Router()
@@ -24,10 +24,9 @@ export function createAuthRouter({ useCases, tokens }) {
     res.json(await useCases.loginWithApple(req.body ?? {}))
   })
 
-  router.get('/me', async (req, res) => {
-    const [scheme, token] = (req.get('authorization') ?? '').split(' ')
-    if (scheme !== 'Bearer' || !token) throw UnauthorizedError()
-    res.json(await useCases.getProfile(tokens.verify(token)))
+  // Se queda por compatibilidad; el canonico ahora es GET /me.
+  router.get('/me', requireAuth(tokens), async (req, res) => {
+    res.json(await useCases.getProfile(req.userId))
   })
 
   return router

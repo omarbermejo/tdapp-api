@@ -2,6 +2,8 @@ import express from 'express'
 
 import { createAuthRouter } from './auth-router.js'
 import { errorHandler } from './error-handler.js'
+import { createMeRouter } from './me-router.js'
+import { createTaskRouter } from './task-router.js'
 
 export function createApp({ useCases, tokens, corsOrigin }) {
   const app = express()
@@ -12,7 +14,7 @@ export function createApp({ useCases, tokens, corsOrigin }) {
     res.set({
       'Access-Control-Allow-Origin': corsOrigin,
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
     })
     if (req.method === 'OPTIONS') return res.sendStatus(204)
     next()
@@ -20,6 +22,8 @@ export function createApp({ useCases, tokens, corsOrigin }) {
 
   app.get('/health', (_req, res) => res.json({ ok: true }))
   app.use('/auth', createAuthRouter({ useCases, tokens }))
+  app.use('/tasks', createTaskRouter({ useCases, tokens }))
+  app.use('/me', createMeRouter({ useCases, tokens }))
   app.use(errorHandler)
 
   return app
