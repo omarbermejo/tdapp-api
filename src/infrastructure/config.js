@@ -10,4 +10,9 @@ export const config = {
   jwtSecret: required('JWT_SECRET'),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '30d',
   corsOrigin: process.env.CORS_ORIGIN ?? '*',
+  // Los client IDs de Google que aceptamos en el aud del idToken (iOS, Android, web).
+  googleClientIds: (process.env.GOOGLE_CLIENT_IDS ?? '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean),
 }

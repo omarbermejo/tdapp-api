@@ -7,7 +7,12 @@ const DB = 'test.db'
 rmSync(DB, { force: true })
 
 const { buildApp } = await import('../src/composition.js')
-const { app, close } = buildApp({ dbPath: DB, jwtSecret: 'test-secret' })
+// ponytail: stub de Google en vez de mockear HTTP. En los tests el idToken ES el payload que Google devolveria.
+const { app, close } = buildApp({
+  dbPath: DB,
+  jwtSecret: 'test-secret',
+  google: { verify: async (idToken) => JSON.parse(idToken) },
+})
 const server = app.listen(0)
 const url = `http://localhost:${server.address().port}`
 
@@ -89,6 +94,23 @@ test('login valida credenciales', async () => {
 test('/auth/me exige token valido', async () => {
   assert.equal((await fetch(`${url}/auth/me`)).status, 401)
   assert.equal((await fetch(`${url}/auth/me`, { headers: { Authorization: 'Bearer basura' } })).status, 401)
+})
+
+test('/auth/google crea la cuenta la primera vez y la reusa despues', async () => {
+  const idToken = JSON.stringify({ email: 'google@nexgen.mx', name: 'Omar de Google' })
+
+  const first = await post('/auth/google', { idToken })
+  assert.equal(first.status, 200)
+  const nuevo = await first.json()
+  assert.ok(nuevo.token)
+  assert.equal(nuevo.user.diagnosis, 'undisclosed', 'entra con los defaults del perfil')
+
+  const second = await post('/auth/google', { idToken })
+  assert.equal((await second.json()).user.id, nuevo.user.id, 'no duplica cuenta por el mismo correo')
+
+  // La cuenta de Google no tiene password usable: nadie entra por /auth/login con ella.
+  const porPassword = await post('/auth/login', { email: 'google@nexgen.mx', password: 'google-oauth' })
+  assert.equal(porPassword.status, 401)
 })
 
 test('/auth/catalogs expone las opciones para la app', async () => {
