@@ -8,6 +8,7 @@ const toDomain = (row) =>
     email: row.email,
     name: row.name,
     passwordHash: row.password_hash,
+    authProvider: row.auth_provider,
     emailVerifiedAt: row.email_verified_at,
     createdAt: row.created_at,
     birthYear: row.birth_year,
@@ -21,7 +22,8 @@ const toDomain = (row) =>
   }
 
 // Un solo JOIN y no dos queries: findById corre en cada request autenticado y es por PK.
-const SELECT = `SELECT u.id, u.email, u.name, u.password_hash, u.email_verified_at, u.created_at,
+const SELECT = `SELECT u.id, u.email, u.name, u.password_hash, u.auth_provider,
+                       u.email_verified_at, u.created_at,
                        p.birth_year, p.diagnosis, p.treatment, p.focus_areas, p.peak_energy,
                        p.reminder_style, p.accent_color, p.onboarded_at
                   FROM users u
@@ -45,8 +47,8 @@ export function createUserRepository(db) {
 
   // La fecha se genera en SQL como en el resto de la tabla: un solo reloj, el de SQLite.
   const insertUser = db.prepare(
-    `INSERT INTO users (email, name, password_hash, email_verified_at)
-     VALUES (?, ?, ?, CASE WHEN ? THEN datetime('now') END)`
+    `INSERT INTO users (email, name, password_hash, auth_provider, email_verified_at)
+     VALUES (?, ?, ?, ?, CASE WHEN ? THEN datetime('now') END)`
   )
   const insertProfile = db.prepare(
     `INSERT INTO user_profiles (user_id, ${PROFILE_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
@@ -93,9 +95,15 @@ export function createUserRepository(db) {
     },
 
     /** Identidad y perfil nacen juntos: leer siempre encuentra las dos filas. */
-    async create({ email, name, passwordHash, emailVerified = false, profile }) {
+    async create({ email, name, passwordHash, authProvider = 'password', emailVerified = false, profile }) {
       return inTransaction(() => {
-        const { lastInsertRowid } = insertUser.run(email, name, passwordHash, emailVerified ? 1 : 0)
+        const { lastInsertRowid } = insertUser.run(
+          email,
+          name,
+          passwordHash,
+          authProvider,
+          emailVerified ? 1 : 0
+        )
         const id = Number(lastInsertRowid)
         insertProfile.run(id, ...profileValues(profile))
         return toDomain(byId.get(id))

@@ -8,6 +8,12 @@ export const PEAK_ENERGY = ['morning', 'afternoon', 'night', 'varies']
 export const REMINDER_STYLE = ['gentle', 'firm', 'persistent']
 export const ACCENT_COLOR = ['forest', 'olive', 'leaf', 'clay', 'copper']
 
+/**
+ * Como entra la cuenta. 'oauth' solo existe para filas viejas cuyo proveedor no se pudo
+ * deducir al migrar; nada nuevo se guarda asi.
+ */
+export const AUTH_PROVIDERS = ['password', 'google', 'apple', 'oauth']
+
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 const MIN_PASSWORD = 8
 const MAX_FOCUS = 3
@@ -94,6 +100,23 @@ export function createProfile(input = {}, current = DEFAULT_PROFILE) {
   return profile
 }
 
+/** Los pasos por los que pasa una cuenta. 'guest' es cosa de la app: aqui siempre hay usuario. */
+export const STAGES = ['verify', 'onboarding', 'ready']
+
+/**
+ * En que paso va la cuenta.
+ *
+ * ponytail: se deriva, no se guarda. Una columna `stage` (o una tabla de pasos) seria un
+ * tercer estado capaz de contradecir a email_verified_at y onboarded_at, y ningun codigo
+ * podria decidir cual manda: alguien marca 'ready' sin verificar y el gate y la pantalla
+ * dicen cosas distintas. Estas dos marcas de tiempo tienen que existir igual — son hechos
+ * con fecha, no banderas — y de ellas sale el paso sin posibilidad de desincronizarse.
+ * Techo: si algun dia hay pasos que NO se puedan deducir de un hecho ya guardado
+ * (p.ej. "vio el tutorial"), eso si pide su propia columna.
+ */
+export const stageOf = (row) =>
+  !row.emailVerifiedAt ? 'verify' : !row.onboardedAt ? 'onboarding' : 'ready'
+
 /**
  * Un solo objeto plano para la app, aunque adentro sean dos tablas.
  * Los campos de perfil en null vienen de un LEFT JOIN sin fila: caen a los defaults
@@ -112,6 +135,9 @@ export const toPublicUser = (row) => ({
   accentColor: row.accentColor ?? DEFAULT_PROFILE.accentColor,
   emailVerified: !!row.emailVerifiedAt,
   onboardedAt: row.onboardedAt ?? null,
+  authProvider: row.authProvider ?? 'password',
+  // El paso lo decide el servidor: la app lo pinta, no lo calcula.
+  stage: stageOf(row),
   createdAt: row.createdAt,
 })
 

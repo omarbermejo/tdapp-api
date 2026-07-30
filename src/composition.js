@@ -57,8 +57,8 @@ export function buildApp(overrides = {}) {
   const useCases = {
     registerUser: registerUser(deps),
     loginUser: loginUser(deps),
-    loginWithGoogle: loginWithIdentity(deps, deps.google),
-    loginWithApple: loginWithIdentity(deps, deps.apple),
+    loginWithGoogle: loginWithIdentity(deps, deps.google, 'google'),
+    loginWithApple: loginWithIdentity(deps, deps.apple, 'apple'),
     verifyEmail: verifyEmail(deps),
     resendCode: resendCode(deps),
     getProfile: getProfile(deps),

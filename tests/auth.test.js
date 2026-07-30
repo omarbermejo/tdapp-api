@@ -161,6 +161,8 @@ test('/auth/google crea la cuenta verificada y la reusa despues', async () => {
   assert.equal(nuevo.user.diagnosis, 'undisclosed', 'entra con los defaults del perfil')
   assert.equal(nuevo.user.emailVerified, true, 'el proveedor ya verifico el correo: se salta el OTP')
   assert.equal(nuevo.user.onboardedAt, null, 'pero si pasa por onboarding')
+  assert.equal(nuevo.user.stage, 'onboarding')
+  assert.equal(nuevo.user.authProvider, 'google', 'la base sabe de donde viene la cuenta')
 
   const second = await post('/auth/google', { idToken })
   assert.equal((await second.json()).user.id, nuevo.user.id, 'no duplica cuenta por el mismo correo')
@@ -168,6 +170,34 @@ test('/auth/google crea la cuenta verificada y la reusa despues', async () => {
   // La cuenta de Google no tiene password usable: nadie entra por /auth/login con ella.
   const porPassword = await post('/auth/login', { email: 'google@nexgen.mx', password: 'oauth-sin-password' })
   assert.equal(porPassword.status, 401)
+
+  // Y registrarse con ese correo tampoco lo secuestra: ya esta verificado.
+  const registrar = await post('/auth/register', {
+    email: 'google@nexgen.mx',
+    password: 'supersecreta1',
+    name: 'Impostor',
+  })
+  assert.equal(registrar.status, 409)
+})
+
+test('una cuenta de Google termina el onboarding con los mismos pasos', async () => {
+  const idToken = JSON.stringify({ email: 'onboarda@nexgen.mx', name: 'Google Nuevo' })
+  const { token, user } = await (await post('/auth/google', { idToken })).json()
+
+  // El proveedor da nombre y correo; ninguno de los 7 campos del perfil. Los elige la persona.
+  assert.equal(user.stage, 'onboarding')
+
+  const saved = await fetch(`${url}/me/profile`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ focusAreas: ['work'], accentColor: 'clay', reminderStyle: 'gentle' }),
+  })
+  assert.equal(saved.status, 200)
+  const listo = (await saved.json()).user
+  assert.equal(listo.stage, 'ready')
+  assert.equal(listo.authProvider, 'google', 'terminar el onboarding no cambia de donde viene')
+  assert.equal(listo.name, 'Google Nuevo', 'ni el nombre que dio el proveedor')
+  assert.deepEqual(listo.focusAreas, ['work'])
 })
 
 test('/auth/apple usa el nombre que manda la app en la primera autorizacion', async () => {
@@ -177,6 +207,7 @@ test('/auth/apple usa el nombre que manda la app en la primera autorizacion', as
   assert.equal(res.status, 200)
   const { user } = await res.json()
   assert.equal(user.name, 'Omar de Apple')
+  assert.equal(user.authProvider, 'apple')
 
   // La segunda vez Apple ya no manda nombre y la cuenta se reusa sin tocarlo.
   const again = await post('/auth/apple', { idToken })
