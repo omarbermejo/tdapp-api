@@ -1,0 +1,15 @@
+{
+  "name": "tdapp-api",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "node --env-file=.env --watch src/main.js",
+    "start": "node --env-file=.env src/main.js",
+    "test": "node --env-file=.env --test"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
