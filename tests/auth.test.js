@@ -68,6 +68,7 @@ test('el perfil se guarda despues de verificar, no en el registro', async () => 
   const { token, user } = await verified.json()
   assert.equal(user.emailVerified, true)
   assert.equal(user.reminderStyle, 'firm', 'el perfil sigue en defaults')
+  assert.equal(user.reminderHour, 9, 'la hora del recordatorio nace con default, no en null')
   assert.equal(user.birthDate, null)
 
   const saved = await fetch(`${url}/me/profile`, {
@@ -78,12 +79,14 @@ test('el perfil se guarda despues de verificar, no en el registro', async () => 
       focusAreas: ['work', 'study'],
       peakEnergy: 'night',
       reminderStyle: 'persistent',
+      reminderHour: 7,
       accentColor: 'leaf',
     }),
   })
   assert.equal(saved.status, 200)
   const profile = (await saved.json()).user
   assert.deepEqual(profile.focusAreas, ['work', 'study'])
+  assert.equal(profile.reminderHour, 7, 'la hora elegida en el onboarding queda guardada')
   assert.equal(profile.birthDate, '1995-03-17', 'la fecha completa vuelve tal cual, en ISO')
   assert.equal(profile.accentColor, 'leaf')
   assert.ok(profile.onboardedAt, 'onboarded_at queda sellado')
@@ -98,6 +101,7 @@ test('register solo exige email, password y nombre', async () => {
   const { user } = await res.json()
   assert.equal(user.birthDate, null)
   assert.equal(user.reminderStyle, 'firm')
+  assert.equal(user.reminderHour, 9)
   assert.deepEqual(user.focusAreas, [])
   assert.equal(user.emailVerified, false)
 })
@@ -185,7 +189,7 @@ test('una cuenta de Google termina el onboarding con los mismos pasos', async ()
   const idToken = JSON.stringify({ email: 'onboarda@nexgen.mx', name: 'Google Nuevo' })
   const { token, user } = await (await post('/auth/google', { idToken })).json()
 
-  // El proveedor da nombre y correo; ninguno de los 7 campos del perfil. Los elige la persona.
+  // El proveedor da nombre y correo; ninguno de los 6 campos del perfil. Los elige la persona.
   assert.equal(user.stage, 'onboarding')
 
   const saved = await fetch(`${url}/me/profile`, {

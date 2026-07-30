@@ -15,6 +15,7 @@ const toDomain = (row) =>
     focusAreas: row.focus_areas ? JSON.parse(row.focus_areas) : null,
     peakEnergy: row.peak_energy,
     reminderStyle: row.reminder_style,
+    reminderHour: row.reminder_hour,
     accentColor: row.accent_color,
     onboardedAt: row.onboarded_at,
   }
@@ -23,19 +24,29 @@ const toDomain = (row) =>
 const SELECT = `SELECT u.id, u.email, u.name, u.password_hash, u.auth_provider,
                        u.email_verified_at, u.created_at,
                        p.birth_date, p.focus_areas, p.peak_energy,
-                       p.reminder_style, p.accent_color, p.onboarded_at
+                       p.reminder_style, p.reminder_hour, p.accent_color, p.onboarded_at
                   FROM users u
                   LEFT JOIN user_profiles p ON p.user_id = u.id`
 
-const PROFILE_COLUMNS = `birth_date, focus_areas, peak_energy, reminder_style, accent_color`
+/**
+ * Las columnas del perfil, en el mismo orden que profileValues: de aqui salen la lista, los
+ * placeholders y el SET del upsert, asi que agregar una columna es tocar estas dos cosas
+ * pegadas y no cuatro SQL sueltos donde olvidar una borra el dato sin error.
+ */
+const PROFILE_COLUMNS = ['birth_date', 'focus_areas', 'peak_energy', 'reminder_style', 'reminder_hour', 'accent_color']
 
 const profileValues = (profile) => [
   profile.birthDate,
   JSON.stringify(profile.focusAreas),
   profile.peakEnergy,
   profile.reminderStyle,
+  profile.reminderHour,
   profile.accentColor,
 ]
+
+const COLUMNS = PROFILE_COLUMNS.join(', ')
+const PLACEHOLDERS = PROFILE_COLUMNS.map(() => '?').join(', ')
+const FROM_EXCLUDED = PROFILE_COLUMNS.map((column) => `${column} = excluded.${column}`).join(', ')
 
 export function createUserRepository(db) {
   const byEmail = db.prepare(`${SELECT} WHERE u.email = ?`)
@@ -47,16 +58,13 @@ export function createUserRepository(db) {
      VALUES (?, ?, ?, ?, CASE WHEN ? THEN datetime('now') END)`
   )
   const insertProfile = db.prepare(
-    `INSERT INTO user_profiles (user_id, ${PROFILE_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)`
+    `INSERT INTO user_profiles (user_id, ${COLUMNS}) VALUES (?, ${PLACEHOLDERS})`
   )
   // onboarded_at con COALESCE: la primera vez se sella, las ediciones posteriores no lo mueven.
   const upsertProfile = db.prepare(
-    `INSERT INTO user_profiles (user_id, ${PROFILE_COLUMNS}, onboarded_at)
-     VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-     ON CONFLICT(user_id) DO UPDATE SET
-       birth_date = excluded.birth_date, focus_areas = excluded.focus_areas,
-       peak_energy = excluded.peak_energy, reminder_style = excluded.reminder_style,
-       accent_color = excluded.accent_color,
+    `INSERT INTO user_profiles (user_id, ${COLUMNS}, onboarded_at)
+     VALUES (?, ${PLACEHOLDERS}, datetime('now'))
+     ON CONFLICT(user_id) DO UPDATE SET ${FROM_EXCLUDED},
        onboarded_at = COALESCE(user_profiles.onboarded_at, excluded.onboarded_at)`
   )
   const touch = db.prepare("UPDATE users SET updated_at = datetime('now') WHERE id = ?")

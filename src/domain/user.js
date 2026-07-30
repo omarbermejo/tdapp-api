@@ -25,6 +25,11 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 const MIN_BIRTH_DATE = '1920-01-01'
 const MIN_AGE = 5
 
+// La hora del recordatorio es la hora del reloj local del telefono, sin minutos: un aviso
+// diario no necesita puntualidad al minuto y un solo entero se agenda igual en iOS y Android.
+const MIN_HOUR = 0
+const MAX_HOUR = 23
+
 const str = (v) => (typeof v === 'string' ? v.trim() : '')
 
 /**
@@ -44,14 +49,18 @@ const oldestChildhood = () => {
 }
 
 /**
- * El perfil con el que nace toda cuenta. Unica fuente de los defaults: la tabla
- * user_profiles no los declara y la app los recibe ya resueltos en el registro.
+ * El perfil con el que nace toda cuenta. Unica fuente de los defaults: los escribe el
+ * repositorio en cada insert y la app los recibe ya resueltos en el registro. La tabla no
+ * declara ninguno (el DEFAULT 9 de reminder_hour existe solo para el backfill de su migracion).
  */
 export const DEFAULT_PROFILE = Object.freeze({
   birthDate: null,
   focusAreas: [],
   peakEnergy: 'varies',
   reminderStyle: 'firm',
+  // Con hora, no solo con intensidad, ya se puede programar el aviso diario. La manana es
+  // cuando mas sirve: el dia todavia se puede acomodar.
+  reminderHour: 9,
   accentColor: 'olive',
 })
 
@@ -107,11 +116,26 @@ export function createProfile(input = {}, current = DEFAULT_PROFILE) {
     if (focusAreas.length > MAX_FOCUS) fields.focusAreas = `Elige maximo ${MAX_FOCUS} focos, mas es ruido`
   }
 
+  /**
+   * Entero 0..23 y nada mas: '9' no se convierte (un string colado seria la app mandando el
+   * valor del control sin parsear, y hay que verlo), 9.5 y 9.0000001 no son una hora agendable,
+   * y null no borra nada porque sin hora no hay recordatorio — para eso esta el default.
+   * Number.isInteger deja fuera de un golpe strings, decimales, NaN, Infinity y null.
+   */
+  let reminderHour = current.reminderHour
+  if (has('reminderHour')) {
+    reminderHour = input.reminderHour
+    if (!Number.isInteger(reminderHour) || reminderHour < MIN_HOUR || reminderHour > MAX_HOUR) {
+      fields.reminderHour = `Elige una hora entera de ${MIN_HOUR} a ${MAX_HOUR}`
+    }
+  }
+
   const profile = {
     birthDate,
     focusAreas,
     peakEnergy: pick('peakEnergy', PEAK_ENERGY),
     reminderStyle: pick('reminderStyle', REMINDER_STYLE),
+    reminderHour,
     accentColor: pick('accentColor', ACCENT_COLOR),
   }
 
@@ -150,6 +174,7 @@ export const toPublicUser = (row) => ({
   focusAreas: row.focusAreas ?? DEFAULT_PROFILE.focusAreas,
   peakEnergy: row.peakEnergy ?? DEFAULT_PROFILE.peakEnergy,
   reminderStyle: row.reminderStyle ?? DEFAULT_PROFILE.reminderStyle,
+  reminderHour: row.reminderHour ?? DEFAULT_PROFILE.reminderHour,
   // Si un rename futuro deja un valor fuera del catalogo, sale el default en vez de un
   // nombre que la app no sabe pintar. Los ya guardados los arregla su migracion.
   accentColor: ACCENT_COLOR.includes(row.accentColor) ? row.accentColor : DEFAULT_PROFILE.accentColor,

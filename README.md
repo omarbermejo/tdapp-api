@@ -36,7 +36,7 @@ Todo lo de `/tasks` y `/me` va con `Authorization: Bearer <token>`.
 | `POST` | `/auth/apple` | `{ idToken, name? }` → `{ token, user }` |
 
 Solo `email`, `password` y `name` son obligatorios al registrar. El resto del perfil
-(`diagnosis`, `treatment`, `birthYear`, `focusAreas`, `peakEnergy`, `reminderStyle`, `accentColor`)
+(`birthDate`, `focusAreas`, `peakEnergy`, `reminderStyle`, `reminderHour`, `accentColor`)
 cae en defaults para que el onboarding se pueda saltar.
 
 ## Tareas

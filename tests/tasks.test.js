@@ -133,6 +133,25 @@ test('el timer acumula y solo permite uno corriendo', async () => {
   assert.equal(malaAccion.status, 400)
 })
 
+test('completar una tarea para su cronometro', async () => {
+  const { task } = await (await newTask({ title: 'Sesion que se completa' })).json()
+
+  await call('POST', `/tasks/${task.id}/timer`, { body: { action: 'start' }, token: auth })
+
+  const hecha = await (
+    await call('PATCH', `/tasks/${task.id}`, { body: { status: 'done' }, token: auth })
+  ).json()
+  assert.equal(hecha.task.running, false, 'una tarea hecha no puede seguir contando')
+  assert.equal(hecha.task.startedAt, null)
+
+  // Y lo que importaba: el cronometro liberado deja arrancar otro. Con el bug, este
+  // start respondia 409 para siempre porque findRunning seguia devolviendo la hecha.
+  const otra = (await (await newTask({ title: 'La siguiente' })).json()).task
+  const arranca = await call('POST', `/tasks/${otra.id}/timer`, { body: { action: 'start' }, token: auth })
+  assert.equal(arranca.status, 200, 'completar la anterior libero el cronometro')
+  await call('POST', `/tasks/${otra.id}/timer`, { body: { action: 'stop' }, token: auth })
+})
+
 test('/me/today arma el resumen del widget', async () => {
   const hoy = '2026-08-03'
   await newTask({ title: 'Primera del dia', dueAt: `${hoy}T08:00:00-06:00` })

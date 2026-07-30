@@ -195,6 +195,41 @@ test('birthDate exige una fecha real en ISO y una edad posible', async () => {
   assert.equal((await untouched.json()).user.birthDate, null)
 })
 
+test('reminderHour es un entero de 0 a 23 y sobrevive a un parche de otro campo', async () => {
+  const token = await verifiedToken('hora@nexgen.mx')
+
+  // Con el default puesto desde el registro ya hay a que hora agendar el aviso diario.
+  const me = await call(url, 'GET', '/me', { token })
+  assert.equal((await me.json()).user.reminderHour, 9)
+
+  for (const reminderHour of [
+    '9', // el valor del control sin parsear: si pasara, la app nunca se enteraria
+    '09',
+    9.5, // media hora no se agenda
+    -1,
+    24, // la hora 24 no existe: es la 0 del dia siguiente
+    100,
+    null, // no borra: sin hora no hay recordatorio
+    true,
+    '',
+    [9],
+  ]) {
+    const res = await call(url, 'PATCH', '/me/profile', { token, body: { reminderHour } })
+    assert.equal(res.status, 400, `${JSON.stringify(reminderHour)} deberia rechazarse`)
+    assert.ok((await res.json()).fields.reminderHour, 'el error va en fields.reminderHour')
+  }
+
+  // Los extremos son horas de verdad: 0 es medianoche y 23 las once de la noche.
+  for (const hour of [0, 23, 21]) {
+    const ok = await call(url, 'PATCH', '/me/profile', { token, body: { reminderHour: hour } })
+    assert.equal(ok.status, 200)
+    assert.equal((await ok.json()).user.reminderHour, hour)
+  }
+
+  const untouched = await call(url, 'PATCH', '/me/profile', { token, body: { accentColor: 'clay' } })
+  assert.equal((await untouched.json()).user.reminderHour, 21, 'un PATCH parcial no la regresa al default')
+})
+
 test('PATCH /me/profile valida, mergea y sella onboarded_at una sola vez', async () => {
   const token = await verifiedToken('perfil@nexgen.mx')
 
