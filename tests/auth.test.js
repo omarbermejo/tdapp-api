@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { DatabaseSync } from 'node:sqlite'
 import test, { after } from 'node:test'
 
 import { dropDb, freshDb } from './helpers/db.js'
@@ -214,6 +215,20 @@ test('/auth/apple usa el nombre que manda la app en la primera autorizacion', as
   const repeat = await again.json()
   assert.equal(repeat.user.id, user.id)
   assert.equal(repeat.user.name, 'Omar de Apple')
+})
+
+test('un acento fuera del catalogo sale como el default, no como basura', async () => {
+  const idToken = JSON.stringify({ email: 'acento@nexgen.mx', name: 'Acento Viejo' })
+  const { token, user } = await (await post('/auth/google', { idToken })).json()
+
+  // Se escribe a mano un nombre de acento que ya no existe, como quedaron las filas de antes
+  // del rename de la paleta. La app hacia Accents['electric'] y reventaba al pintar.
+  const db = new DatabaseSync(DB)
+  db.prepare('UPDATE user_profiles SET accent_color = ? WHERE user_id = ?').run('electric', user.id)
+  db.close()
+
+  const me = await fetch(`${url}/me`, { headers: { Authorization: `Bearer ${token}` } })
+  assert.equal((await me.json()).user.accentColor, 'olive')
 })
 
 test('/auth/catalogs expone las opciones para la app', async () => {

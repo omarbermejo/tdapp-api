@@ -132,7 +132,9 @@ export const toPublicUser = (row) => ({
   focusAreas: row.focusAreas ?? DEFAULT_PROFILE.focusAreas,
   peakEnergy: row.peakEnergy ?? DEFAULT_PROFILE.peakEnergy,
   reminderStyle: row.reminderStyle ?? DEFAULT_PROFILE.reminderStyle,
-  accentColor: row.accentColor ?? DEFAULT_PROFILE.accentColor,
+  // Si un rename futuro deja un valor fuera del catalogo, sale el default en vez de un
+  // nombre que la app no sabe pintar. Los ya guardados los arregla su migracion.
+  accentColor: ACCENT_COLOR.includes(row.accentColor) ? row.accentColor : DEFAULT_PROFILE.accentColor,
   emailVerified: !!row.emailVerifiedAt,
   onboardedAt: row.onboardedAt ?? null,
   authProvider: row.authProvider ?? 'password',
