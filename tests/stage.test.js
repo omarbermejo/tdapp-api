@@ -47,7 +47,7 @@ test('el stage viene del API y avanza verify -> onboarding -> ready', async () =
 
   const done = await (
     await call('PATCH', '/me/profile', {
-      body: { diagnosis: 'combined', focusAreas: ['work'] },
+      body: { birthDate: '1990-05-02', focusAreas: ['work'] },
       token: verified.token,
     })
   ).json()

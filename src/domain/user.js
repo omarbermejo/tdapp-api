@@ -1,8 +1,11 @@
 import { ValidationError } from './errors.js'
 
-/** Catalogos del perfil TDAH. La app los consume en GET /catalogs para pintar las opciones. */
-export const DIAGNOSIS = ['inattentive', 'hyperactive', 'combined', 'evaluating', 'undiagnosed', 'undisclosed']
-export const TREATMENT = ['medication', 'therapy', 'both', 'none', 'undisclosed']
+/**
+ * Catalogos del perfil. La app los consume en GET /catalogs para pintar las opciones.
+ *
+ * No hay catalogo de diagnostico ni de tratamiento: son dato clinico que la app no usa para
+ * nada y eran las dos preguntas que mas gente dejaba a medias en el onboarding.
+ */
 export const FOCUS_AREAS = ['study', 'work', 'home', 'health', 'money', 'relationships', 'creativity']
 export const PEAK_ENERGY = ['morning', 'afternoon', 'night', 'varies']
 export const REMINDER_STYLE = ['gentle', 'firm', 'persistent']
@@ -18,16 +21,34 @@ const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 const MIN_PASSWORD = 8
 const MAX_FOCUS = 3
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+const MIN_BIRTH_DATE = '1920-01-01'
+const MIN_AGE = 5
+
 const str = (v) => (typeof v === 'string' ? v.trim() : '')
+
+/**
+ * Fecha real, no solo con forma de fecha: '2026-02-31' pasa el regex y '2026-13-01' tambien.
+ * Ir y volver delata al dia que no existe; toJSON (y no toISOString) porque en las fechas
+ * imposibles devuelve null en vez de lanzar RangeError.
+ */
+const isRealDate = (value) =>
+  ISO_DATE.test(value) && new Date(`${value}T00:00:00Z`).toJSON()?.startsWith(value) === true
+
+/** La fecha de quien cumple MIN_AGE anos hoy. En ISO, comparar fechas es comparar texto. */
+const oldestChildhood = () => {
+  const now = new Date()
+  return new Date(Date.UTC(now.getUTCFullYear() - MIN_AGE, now.getUTCMonth(), now.getUTCDate()))
+    .toISOString()
+    .slice(0, 10)
+}
 
 /**
  * El perfil con el que nace toda cuenta. Unica fuente de los defaults: la tabla
  * user_profiles no los declara y la app los recibe ya resueltos en el registro.
  */
 export const DEFAULT_PROFILE = Object.freeze({
-  birthYear: null,
-  diagnosis: 'undisclosed',
-  treatment: 'undisclosed',
+  birthDate: null,
   focusAreas: [],
   peakEnergy: 'varies',
   reminderStyle: 'firm',
@@ -68,12 +89,13 @@ export function createProfile(input = {}, current = DEFAULT_PROFILE) {
     return value
   }
 
-  let birthYear = current.birthYear
-  if (has('birthYear')) {
-    birthYear = input.birthYear == null ? null : Number(input.birthYear)
-    const currentYear = new Date().getFullYear()
-    if (birthYear !== null && !(Number.isInteger(birthYear) && birthYear >= 1920 && birthYear <= currentYear - 5)) {
-      fields.birthYear = 'Año de nacimiento fuera de rango'
+  let birthDate = current.birthDate
+  if (has('birthDate')) {
+    birthDate = input.birthDate == null ? null : str(input.birthDate)
+    if (birthDate !== null && !isRealDate(birthDate)) {
+      fields.birthDate = 'Usa una fecha real con formato AAAA-MM-DD'
+    } else if (birthDate !== null && (birthDate < MIN_BIRTH_DATE || birthDate > oldestChildhood())) {
+      fields.birthDate = 'Fecha de nacimiento fuera de rango'
     }
   }
 
@@ -86,10 +108,8 @@ export function createProfile(input = {}, current = DEFAULT_PROFILE) {
   }
 
   const profile = {
-    birthYear,
+    birthDate,
     focusAreas,
-    diagnosis: pick('diagnosis', DIAGNOSIS),
-    treatment: pick('treatment', TREATMENT),
     peakEnergy: pick('peakEnergy', PEAK_ENERGY),
     reminderStyle: pick('reminderStyle', REMINDER_STYLE),
     accentColor: pick('accentColor', ACCENT_COLOR),
@@ -126,9 +146,7 @@ export const toPublicUser = (row) => ({
   id: row.id,
   email: row.email,
   name: row.name,
-  birthYear: row.birthYear ?? DEFAULT_PROFILE.birthYear,
-  diagnosis: row.diagnosis ?? DEFAULT_PROFILE.diagnosis,
-  treatment: row.treatment ?? DEFAULT_PROFILE.treatment,
+  birthDate: row.birthDate ?? DEFAULT_PROFILE.birthDate,
   focusAreas: row.focusAreas ?? DEFAULT_PROFILE.focusAreas,
   peakEnergy: row.peakEnergy ?? DEFAULT_PROFILE.peakEnergy,
   reminderStyle: row.reminderStyle ?? DEFAULT_PROFILE.reminderStyle,
@@ -144,8 +162,6 @@ export const toPublicUser = (row) => ({
 })
 
 export const catalogs = {
-  diagnosis: DIAGNOSIS,
-  treatment: TREATMENT,
   focusAreas: FOCUS_AREAS,
   peakEnergy: PEAK_ENERGY,
   reminderStyle: REMINDER_STYLE,

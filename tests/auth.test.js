@@ -67,15 +67,14 @@ test('el perfil se guarda despues de verificar, no en el registro', async () => 
   assert.equal(verified.status, 200)
   const { token, user } = await verified.json()
   assert.equal(user.emailVerified, true)
-  assert.equal(user.diagnosis, 'undisclosed', 'el perfil sigue en defaults')
+  assert.equal(user.reminderStyle, 'firm', 'el perfil sigue en defaults')
+  assert.equal(user.birthDate, null)
 
   const saved = await fetch(`${url}/me/profile`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({
-      birthYear: 1995,
-      diagnosis: 'combined',
-      treatment: 'medication',
+      birthDate: '1995-03-17',
       focusAreas: ['work', 'study'],
       peakEnergy: 'night',
       reminderStyle: 'persistent',
@@ -85,6 +84,7 @@ test('el perfil se guarda despues de verificar, no en el registro', async () => 
   assert.equal(saved.status, 200)
   const profile = (await saved.json()).user
   assert.deepEqual(profile.focusAreas, ['work', 'study'])
+  assert.equal(profile.birthDate, '1995-03-17', 'la fecha completa vuelve tal cual, en ISO')
   assert.equal(profile.accentColor, 'leaf')
   assert.ok(profile.onboardedAt, 'onboarded_at queda sellado')
 
@@ -96,7 +96,7 @@ test('register solo exige email, password y nombre', async () => {
   const res = await post('/auth/register', { email: 'minimo@nexgen.mx', password: 'supersecreta1', name: 'Ana' })
   assert.equal(res.status, 201)
   const { user } = await res.json()
-  assert.equal(user.diagnosis, 'undisclosed')
+  assert.equal(user.birthDate, null)
   assert.equal(user.reminderStyle, 'firm')
   assert.deepEqual(user.focusAreas, [])
   assert.equal(user.emailVerified, false)
@@ -159,7 +159,7 @@ test('/auth/google crea la cuenta verificada y la reusa despues', async () => {
   assert.equal(first.status, 200)
   const nuevo = await first.json()
   assert.ok(nuevo.token)
-  assert.equal(nuevo.user.diagnosis, 'undisclosed', 'entra con los defaults del perfil')
+  assert.equal(nuevo.user.peakEnergy, 'varies', 'entra con los defaults del perfil')
   assert.equal(nuevo.user.emailVerified, true, 'el proveedor ya verifico el correo: se salta el OTP')
   assert.equal(nuevo.user.onboardedAt, null, 'pero si pasa por onboarding')
   assert.equal(nuevo.user.stage, 'onboarding')
@@ -235,4 +235,13 @@ test('/auth/catalogs expone las opciones para la app', async () => {
   const catalogs = await (await fetch(`${url}/auth/catalogs`)).json()
   assert.ok(catalogs.focusAreas.includes('creativity'))
   assert.equal(catalogs.reminderStyle.length, 3)
+
+  // Lo medico salio del perfil: si el catalogo lo volviera a exponer, la app volveria a pintar
+  // esas dos pantallas.
+  assert.deepEqual(Object.keys(catalogs).sort(), [
+    'accentColor',
+    'focusAreas',
+    'peakEnergy',
+    'reminderStyle',
+  ])
 })

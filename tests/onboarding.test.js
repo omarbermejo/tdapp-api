@@ -149,15 +149,54 @@ test('un codigo vencido se rechaza y el reenvio manda otro', async () => {
   assert.equal(expiredMail.sent.length, 2)
 })
 
-test('PATCH /me/profile valida, mergea y sella onboarded_at una sola vez', async () => {
+/** Registra, verifica y devuelve el token listo para tocar /me/profile. */
+async function verifiedToken(email) {
   const res = await call(url, 'POST', '/auth/register', {
-    body: { email: 'perfil@nexgen.mx', password: 'supersecreta1', name: 'Perfil' },
+    body: { email, password: 'supersecreta1', name: 'Perfil' },
   })
-  const token = (
-    await (
-      await call(url, 'POST', '/auth/verify', { token: (await res.json()).token, body: { code: mail.lastCode() } })
-    ).json()
-  ).token
+  const verified = await call(url, 'POST', '/auth/verify', {
+    token: (await res.json()).token,
+    body: { code: mail.lastCode() },
+  })
+  return (await verified.json()).token
+}
+
+test('birthDate exige una fecha real en ISO y una edad posible', async () => {
+  const token = await verifiedToken('fecha@nexgen.mx')
+
+  for (const birthDate of [
+    '17/03/1995', // formato de la app, no ISO
+    '1995-3-7', // sin ceros
+    '1995-03-17T00:00:00Z', // fecha con hora
+    '2026-02-31', // dia que no existe: Date lo correria a marzo
+    '2026-13-01', // mes que no existe
+    '1919-12-31', // antes del limite
+    '2026-01-01', // menor de 5 anos
+    1995, // el ano suelto ya no vale
+    '',
+  ]) {
+    const res = await call(url, 'PATCH', '/me/profile', { token, body: { birthDate } })
+    assert.equal(res.status, 400, `${birthDate} deberia rechazarse`)
+    assert.ok((await res.json()).fields.birthDate, 'el error va en fields.birthDate')
+  }
+
+  const ok = await call(url, 'PATCH', '/me/profile', { token, body: { birthDate: '1995-02-28' } })
+  assert.equal((await ok.json()).user.birthDate, '1995-02-28')
+
+  // 29 de febrero de un ano bisiesto es fecha real y tiene que pasar.
+  const leap = await call(url, 'PATCH', '/me/profile', { token, body: { birthDate: '1996-02-29' } })
+  assert.equal((await leap.json()).user.birthDate, '1996-02-29')
+
+  // null la borra; no mandarla no la toca.
+  const cleared = await call(url, 'PATCH', '/me/profile', { token, body: { birthDate: null } })
+  assert.equal((await cleared.json()).user.birthDate, null)
+
+  const untouched = await call(url, 'PATCH', '/me/profile', { token, body: { accentColor: 'clay' } })
+  assert.equal((await untouched.json()).user.birthDate, null)
+})
+
+test('PATCH /me/profile valida, mergea y sella onboarded_at una sola vez', async () => {
+  const token = await verifiedToken('perfil@nexgen.mx')
 
   const invalid = await call(url, 'PATCH', '/me/profile', { token, body: { focusAreas: ['ocio'] } })
   assert.equal(invalid.status, 400)

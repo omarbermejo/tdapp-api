@@ -11,9 +11,7 @@ const toDomain = (row) =>
     authProvider: row.auth_provider,
     emailVerifiedAt: row.email_verified_at,
     createdAt: row.created_at,
-    birthYear: row.birth_year,
-    diagnosis: row.diagnosis,
-    treatment: row.treatment,
+    birthDate: row.birth_date,
     focusAreas: row.focus_areas ? JSON.parse(row.focus_areas) : null,
     peakEnergy: row.peak_energy,
     reminderStyle: row.reminder_style,
@@ -24,17 +22,15 @@ const toDomain = (row) =>
 // Un solo JOIN y no dos queries: findById corre en cada request autenticado y es por PK.
 const SELECT = `SELECT u.id, u.email, u.name, u.password_hash, u.auth_provider,
                        u.email_verified_at, u.created_at,
-                       p.birth_year, p.diagnosis, p.treatment, p.focus_areas, p.peak_energy,
+                       p.birth_date, p.focus_areas, p.peak_energy,
                        p.reminder_style, p.accent_color, p.onboarded_at
                   FROM users u
                   LEFT JOIN user_profiles p ON p.user_id = u.id`
 
-const PROFILE_COLUMNS = `birth_year, diagnosis, treatment, focus_areas, peak_energy, reminder_style, accent_color`
+const PROFILE_COLUMNS = `birth_date, focus_areas, peak_energy, reminder_style, accent_color`
 
 const profileValues = (profile) => [
-  profile.birthYear,
-  profile.diagnosis,
-  profile.treatment,
+  profile.birthDate,
   JSON.stringify(profile.focusAreas),
   profile.peakEnergy,
   profile.reminderStyle,
@@ -51,15 +47,14 @@ export function createUserRepository(db) {
      VALUES (?, ?, ?, ?, CASE WHEN ? THEN datetime('now') END)`
   )
   const insertProfile = db.prepare(
-    `INSERT INTO user_profiles (user_id, ${PROFILE_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO user_profiles (user_id, ${PROFILE_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)`
   )
   // onboarded_at con COALESCE: la primera vez se sella, las ediciones posteriores no lo mueven.
   const upsertProfile = db.prepare(
     `INSERT INTO user_profiles (user_id, ${PROFILE_COLUMNS}, onboarded_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT(user_id) DO UPDATE SET
-       birth_year = excluded.birth_year, diagnosis = excluded.diagnosis,
-       treatment = excluded.treatment, focus_areas = excluded.focus_areas,
+       birth_date = excluded.birth_date, focus_areas = excluded.focus_areas,
        peak_energy = excluded.peak_energy, reminder_style = excluded.reminder_style,
        accent_color = excluded.accent_color,
        onboarded_at = COALESCE(user_profiles.onboarded_at, excluded.onboarded_at)`
