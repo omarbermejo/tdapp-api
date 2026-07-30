@@ -20,6 +20,10 @@ export function createAuthRouter({ useCases, tokens }) {
     res.json(await useCases.loginWithGoogle(req.body ?? {}))
   })
 
+  router.post('/apple', async (req, res) => {
+    res.json(await useCases.loginWithApple(req.body ?? {}))
+  })
+
   router.get('/me', async (req, res) => {
     const [scheme, token] = (req.get('authorization') ?? '').split(' ')
     if (scheme !== 'Bearer' || !token) throw UnauthorizedError()

@@ -7,11 +7,14 @@ const DB = 'test.db'
 rmSync(DB, { force: true })
 
 const { buildApp } = await import('../src/composition.js')
-// ponytail: stub de Google en vez de mockear HTTP. En los tests el idToken ES el payload que Google devolveria.
+// ponytail: stubs de los proveedores en vez de mockear HTTP.
+// En los tests el idToken ES el payload que Google o Apple devolverian.
+const identity = { verify: async (idToken, name) => ({ ...JSON.parse(idToken), ...(name && { name }) }) }
 const { app, close } = buildApp({
   dbPath: DB,
   jwtSecret: 'test-secret',
-  google: { verify: async (idToken) => JSON.parse(idToken) },
+  google: identity,
+  apple: identity,
 })
 const server = app.listen(0)
 const url = `http://localhost:${server.address().port}`
@@ -111,6 +114,21 @@ test('/auth/google crea la cuenta la primera vez y la reusa despues', async () =
   // La cuenta de Google no tiene password usable: nadie entra por /auth/login con ella.
   const porPassword = await post('/auth/login', { email: 'google@nexgen.mx', password: 'google-oauth' })
   assert.equal(porPassword.status, 401)
+})
+
+test('/auth/apple usa el nombre que manda la app en la primera autorizacion', async () => {
+  const idToken = JSON.stringify({ email: 'apple@nexgen.mx', name: 'apple@nexgen.mx' })
+
+  const res = await post('/auth/apple', { idToken, name: 'Omar de Apple' })
+  assert.equal(res.status, 200)
+  const { user } = await res.json()
+  assert.equal(user.name, 'Omar de Apple')
+
+  // La segunda vez Apple ya no manda nombre y la cuenta se reusa sin tocarlo.
+  const again = await post('/auth/apple', { idToken })
+  const repeat = await again.json()
+  assert.equal(repeat.user.id, user.id)
+  assert.equal(repeat.user.name, 'Omar de Apple')
 })
 
 test('/auth/catalogs expone las opciones para la app', async () => {
