@@ -7,6 +7,10 @@ export const TASK_STATUS = ['pending', 'done']
 /** Minutos sugeridos por tamaño. La app los usa para el timer y la Live Activity. */
 export const SIZE_MINUTES = { quick: 5, medium: 25, deep: 50 }
 
+/** 1 min a 8 h. Debajo de 1 no es una tarea y arriba de 8 h no es una sesion, es un dia. */
+const MIN_MINUTES = 1
+const MAX_MINUTES = 480
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}T/
 const str = (v) => (typeof v === 'string' ? v.trim() : '')
 
@@ -34,6 +38,20 @@ export function makeTask(input = {}, base = {}) {
   const focusArea = str(merged.focusArea) || null
   if (focusArea && !FOCUS_AREAS.includes(focusArea)) fields.focusArea = `Opcion no valida: ${focusArea}`
 
+  /**
+   * null es un valor con significado: "no lo decidi, usa lo que sugiere el tamaño". Por eso
+   * `minutes` no cae en un default — un default aqui borraria la diferencia entre elegir 25
+   * y no haber elegido.
+   */
+  const minutes =
+    merged.minutes == null || merged.minutes === '' ? null : Number(merged.minutes)
+  if (
+    minutes !== null &&
+    !(Number.isInteger(minutes) && minutes >= MIN_MINUTES && minutes <= MAX_MINUTES)
+  ) {
+    fields.minutes = `Entre ${MIN_MINUTES} y ${MAX_MINUTES} minutos`
+  }
+
   const dueAt = merged.dueAt == null || merged.dueAt === '' ? null : str(merged.dueAt)
   if (dueAt && (!ISO_DATE.test(dueAt) || Number.isNaN(Date.parse(dueAt)))) {
     fields.dueAt = 'Usa una fecha ISO con zona, ej 2026-07-30T18:00:00-06:00'
@@ -43,6 +61,7 @@ export function makeTask(input = {}, base = {}) {
     title,
     notes: notes || null,
     size: pick('size', TASK_SIZE, 'medium'),
+    minutes,
     status: pick('status', TASK_STATUS, 'pending'),
     focusArea,
     dueAt,
@@ -64,7 +83,9 @@ export const toPublicTask = (row) => ({
   focusArea: row.focusArea,
   dueAt: row.dueAt,
   dueDate: row.dueDate,
-  suggestedMinutes: SIZE_MINUTES[row.size],
+  /** Lo que la persona puso; si no puso nada, lo que sugiere el tamaño. */
+  minutes: row.minutes ?? null,
+  suggestedMinutes: row.minutes ?? SIZE_MINUTES[row.size],
   /** Segundos acumulados + los del tramo en curso, para que la app no tenga que sumar. */
   elapsedSeconds: row.elapsedSeconds + secondsSince(row.startedAt),
   startedAt: row.startedAt,
@@ -78,6 +99,7 @@ export const secondsSince = (isoOrNull) =>
 
 export const taskCatalogs = {
   size: TASK_SIZE,
+  minutes: { min: MIN_MINUTES, max: MAX_MINUTES },
   status: TASK_STATUS,
   focusArea: FOCUS_AREAS,
   sizeMinutes: SIZE_MINUTES,

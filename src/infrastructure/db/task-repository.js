@@ -1,4 +1,4 @@
-const COLUMNS = `id, user_id, title, notes, size, status, focus_area, due_at, due_date,
+const COLUMNS = `id, user_id, title, notes, size, minutes, status, focus_area, due_at, due_date,
                  started_at, elapsed_seconds, completed_at, created_at`
 
 const toDomain = (row) =>
@@ -8,6 +8,7 @@ const toDomain = (row) =>
     title: row.title,
     notes: row.notes,
     size: row.size,
+    minutes: row.minutes,
     status: row.status,
     focusArea: row.focus_area,
     dueAt: row.due_at,
@@ -20,20 +21,21 @@ const toDomain = (row) =>
 
 export function createTaskRepository(db) {
   const insert = db.prepare(`INSERT INTO tasks
-    (user_id, title, notes, size, status, focus_area, due_at, due_date)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+    (user_id, title, notes, size, minutes, status, focus_area, due_at, due_date)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
   const byId = db.prepare(`SELECT ${COLUMNS} FROM tasks WHERE user_id = ? AND id = ?`)
   const running = db.prepare(`SELECT ${COLUMNS} FROM tasks WHERE user_id = ? AND started_at IS NOT NULL LIMIT 1`)
   const del = db.prepare('DELETE FROM tasks WHERE user_id = ? AND id = ?')
   const setTimer = db.prepare('UPDATE tasks SET started_at = ?, elapsed_seconds = ? WHERE user_id = ? AND id = ?')
   const patch = db.prepare(`UPDATE tasks SET
-    title = ?, notes = ?, size = ?, status = ?, focus_area = ?, due_at = ?, due_date = ?, completed_at = ?
+    title = ?, notes = ?, size = ?, minutes = ?, status = ?, focus_area = ?,
+    due_at = ?, due_date = ?, completed_at = ?
     WHERE user_id = ? AND id = ?`)
 
   return {
     async create(userId, task) {
       const { lastInsertRowid } = insert.run(
-        userId, task.title, task.notes, task.size, task.status,
+        userId, task.title, task.notes, task.size, task.minutes, task.status,
         task.focusArea, task.dueAt, task.dueDate
       )
       return toDomain(byId.get(userId, Number(lastInsertRowid)))
@@ -62,7 +64,7 @@ export function createTaskRepository(db) {
 
     async update(userId, id, task) {
       patch.run(
-        task.title, task.notes, task.size, task.status, task.focusArea,
+        task.title, task.notes, task.size, task.minutes, task.status, task.focusArea,
         task.dueAt, task.dueDate, task.completedAt, userId, Number(id)
       )
       return toDomain(byId.get(userId, Number(id)))

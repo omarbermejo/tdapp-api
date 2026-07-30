@@ -68,6 +68,33 @@ test('crea una tarea con defaults y deriva la fecha local', async () => {
   assert.equal(task.running, false)
 })
 
+test('los minutos exactos mandan sobre el tamaño', async () => {
+  // Sin minutos: el tamaño sugiere. Es el caso normal, y anotar no obliga a elegir numero.
+  const porTamano = await (await newTask({ title: 'Profunda', size: 'deep' })).json()
+  assert.equal(porTamano.task.minutes, null, 'null significa "no lo decidi"')
+  assert.equal(porTamano.task.suggestedMinutes, 50)
+
+  // Con minutos: 15 no cabe en ningun cajon, y es justo el caso que motivo la columna.
+  const exacta = await (await newTask({ title: 'Quince', size: 'medium', minutes: 15 })).json()
+  assert.equal(exacta.task.minutes, 15)
+  assert.equal(exacta.task.suggestedMinutes, 15, 'lo elegido gana al sugerido')
+
+  // Y se puede volver a "que decida el tamaño" mandando null.
+  const devuelta = await (
+    await call('PATCH', `/tasks/${exacta.task.id}`, { body: { minutes: null }, token: auth })
+  ).json()
+  assert.equal(devuelta.task.minutes, null)
+  assert.equal(devuelta.task.suggestedMinutes, 25)
+})
+
+test('rechaza minutos fuera de rango', async () => {
+  for (const minutes of [0, -5, 481, 12.5]) {
+    const res = await newTask({ title: 'Fuera', minutes })
+    assert.equal(res.status, 400, `${minutes} no deberia pasar`)
+    assert.ok((await res.json()).fields.minutes)
+  }
+})
+
 test('rechaza datos invalidos', async () => {
   const sinTitulo = await newTask({ title: '   ' })
   assert.equal(sinTitulo.status, 400)
