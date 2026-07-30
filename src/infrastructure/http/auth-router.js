@@ -24,6 +24,17 @@ export function createAuthRouter({ useCases, tokens }) {
     res.json(await useCases.loginWithApple(req.body ?? {}))
   })
 
+  // Verificar y reenviar exigen sesion pero NO correo verificado, y no reciben el correo en
+  // el body: asi no hay forma de averiguar que correos existen.
+  router.post('/verify', requireAuth(tokens), async (req, res) => {
+    res.json(await useCases.verifyEmail(req.userId, req.body ?? {}))
+  })
+
+  router.post('/resend', requireAuth(tokens), async (req, res) => {
+    await useCases.resendCode(req.userId)
+    res.sendStatus(202)
+  })
+
   // Se queda por compatibilidad; el canonico ahora es GET /me.
   router.get('/me', requireAuth(tokens), async (req, res) => {
     res.json(await useCases.getProfile(req.userId))

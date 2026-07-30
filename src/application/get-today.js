@@ -9,8 +9,10 @@ import { toPublicUser } from '../domain/user.js'
 export const getToday =
   ({ users, tasks }) =>
   async (userId, date) => {
-    const user = await users.findById(userId)
-    if (!user) throw NotFoundError('Usuario no encontrado')
+    const row = await users.findById(userId)
+    if (!row) throw NotFoundError('Usuario no encontrado')
+    // Por toPublicUser para que el perfil llegue con defaults resueltos, no con nulls del JOIN.
+    const user = toPublicUser(row)
 
     const today = date || new Date().toISOString().slice(0, 10)
     const [ofDay, running] = await Promise.all([

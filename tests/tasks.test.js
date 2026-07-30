@@ -1,20 +1,24 @@
 import assert from 'node:assert/strict'
-import { rmSync } from 'node:fs'
 import test, { after, before } from 'node:test'
+
+import { dropDb, freshDb } from './helpers/db.js'
+import { codeMailer } from './helpers/mailer.js'
 
 process.env.JWT_SECRET ??= 'test-secret'
 const DB = 'test-tasks.db'
-rmSync(DB, { force: true })
+// El esquema sale de las migraciones: openDatabase ya no crea tablas.
+await freshDb(DB)
 
 const { buildApp } = await import('../src/composition.js')
-const { app, close } = buildApp({ dbPath: DB, jwtSecret: 'test-secret' })
+const mail = codeMailer()
+const { app, close } = buildApp({ dbPath: DB, jwtSecret: 'test-secret', mailer: mail.mailer })
 const server = app.listen(0)
 const url = `http://localhost:${server.address().port}`
 
 after(() => {
   server.close()
   close()
-  for (const suffix of ['', '-wal', '-shm']) rmSync(`${DB}${suffix}`, { force: true })
+  dropDb(DB)
 })
 
 let auth
@@ -32,16 +36,17 @@ const call = (method, path, { body, token } = {}) =>
 
 const newTask = (body, token = auth) => call('POST', '/tasks', { body, token })
 
-before(async () => {
-  const one = await call('POST', '/auth/register', {
-    body: { email: 'tareas@nexgen.mx', password: 'supersecreta1', name: 'Omar' },
-  })
-  auth = (await one.json()).token
+/** Las tareas exigen correo verificado, asi que el alta de prueba pasa por el codigo. */
+const signUp = async (email, name) => {
+  const res = await call('POST', '/auth/register', { body: { email, password: 'supersecreta1', name } })
+  const { token } = await res.json()
+  const verified = await call('POST', '/auth/verify', { body: { code: mail.lastCode() }, token })
+  return (await verified.json()).token
+}
 
-  const two = await call('POST', '/auth/register', {
-    body: { email: 'otro@nexgen.mx', password: 'supersecreta1', name: 'Ana' },
-  })
-  otherAuth = (await two.json()).token
+before(async () => {
+  auth = await signUp('tareas@nexgen.mx', 'Omar')
+  otherAuth = await signUp('otro@nexgen.mx', 'Ana')
 })
 
 test('todas las rutas de tareas exigen token', async () => {

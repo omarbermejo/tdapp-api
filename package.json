@@ -6,10 +6,17 @@
   "scripts": {
     "dev": "node --env-file=.env --watch src/main.js",
     "start": "node --env-file=.env src/main.js",
-    "test": "node --env-file=.env --test"
+    "test": "node --env-file=.env --test",
+    "db:migrate": "node --env-file-if-exists=.env node_modules/knex/bin/cli.js migrate:latest",
+    "db:status": "node --env-file-if-exists=.env node_modules/knex/bin/cli.js migrate:status",
+    "db:make": "node node_modules/knex/bin/cli.js migrate:make"
   },
   "dependencies": {
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "better-sqlite3": "^13.0.2",
+    "knex": "^3.3.0"
   }
 }

@@ -21,4 +21,7 @@ export const config = {
   googleClientIds: list('GOOGLE_CLIENT_IDS'),
   // En Apple el aud es el bundle id de la app (o el Services ID si algun dia hay web).
   appleClientIds: list('APPLE_CLIENT_IDS'),
+  // Vacio no revienta: el codigo sale en la consola en vez del correo (ver console-mailer.js).
+  resendApiKey: process.env.RESEND_API_KEY ?? '',
+  mailFrom: process.env.MAIL_FROM ?? 'tdapp <onboarding@resend.dev>',
 }

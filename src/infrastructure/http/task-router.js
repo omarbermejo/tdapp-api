@@ -2,13 +2,14 @@ import { Router } from 'express'
 
 import { taskCatalogs } from '../../domain/task.js'
 import { requireAuth } from './require-auth.js'
+import { requireVerified } from './require-verified.js'
 
 export function createTaskRouter({ useCases, tokens }) {
   const router = Router()
 
   router.get('/catalogs', (_req, res) => res.json(taskCatalogs))
 
-  router.use(requireAuth(tokens))
+  router.use(requireAuth(tokens), requireVerified())
 
   router.get('/', async (req, res) => {
     res.json(await useCases.listTasks(req.userId, req.query))

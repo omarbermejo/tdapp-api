@@ -1,4 +1,4 @@
-import { createUser, toPublicUser } from '../domain/user.js'
+import { DEFAULT_PROFILE, createIdentity, toPublicUser } from '../domain/user.js'
 
 // ponytail: sin columna google_id ni apple_sub. El correo verificado por el proveedor ES la
 // identidad, una cuenta por correo. Si algun dia hay que enlazar dos proveedores, ahi va la tabla.
@@ -19,8 +19,15 @@ export const loginWithIdentity =
 
     let row = await users.findByEmail(identity.email)
     if (!row) {
-      const { password, ...user } = createUser({ ...identity, password: PLACEHOLDER_PASSWORD })
-      row = await users.create({ ...user, passwordHash: NO_PASSWORD })
+      const { password, ...account } = createIdentity({ ...identity, password: PLACEHOLDER_PASSWORD })
+      row = await users.create({
+        ...account,
+        passwordHash: NO_PASSWORD,
+        // El proveedor ya verifico el correo (los verifiers exigen email_verified), asi que
+        // estas cuentas se saltan el OTP y caen directo en onboarding.
+        emailVerified: true,
+        profile: DEFAULT_PROFILE,
+      })
     }
 
     const publicUser = toPublicUser(row)
