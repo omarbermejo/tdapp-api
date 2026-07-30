@@ -6,7 +6,7 @@ export const TREATMENT = ['medication', 'therapy', 'both', 'none', 'undisclosed'
 export const FOCUS_AREAS = ['study', 'work', 'home', 'health', 'money', 'relationships', 'creativity']
 export const PEAK_ENERGY = ['morning', 'afternoon', 'night', 'varies']
 export const REMINDER_STYLE = ['gentle', 'firm', 'persistent']
-export const ACCENT_COLOR = ['electric', 'lime', 'mango', 'magenta', 'turquoise']
+export const ACCENT_COLOR = ['forest', 'olive', 'leaf', 'clay', 'copper']
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 const MIN_PASSWORD = 8
@@ -51,7 +51,7 @@ export function createUser(input = {}) {
     treatment: pick('treatment', TREATMENT, 'undisclosed'),
     peakEnergy: pick('peakEnergy', PEAK_ENERGY, 'varies'),
     reminderStyle: pick('reminderStyle', REMINDER_STYLE, 'firm'),
-    accentColor: pick('accentColor', ACCENT_COLOR, 'electric'),
+    accentColor: pick('accentColor', ACCENT_COLOR, 'olive'),
   }
 
   if (Object.keys(fields).length) throw ValidationError(fields)

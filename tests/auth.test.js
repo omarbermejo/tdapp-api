@@ -42,14 +42,14 @@ test('register guarda el perfil completo y devuelve token', async () => {
     focusAreas: ['work', 'study'],
     peakEnergy: 'night',
     reminderStyle: 'persistent',
-    accentColor: 'lime',
+    accentColor: 'leaf',
   })
   assert.equal(res.status, 201)
 
   const { token, user } = await res.json()
   assert.equal(user.email, 'omar@nexgen.mx', 'el email se normaliza a minusculas')
   assert.deepEqual(user.focusAreas, ['work', 'study'])
-  assert.equal(user.accentColor, 'lime')
+  assert.equal(user.accentColor, 'leaf')
   assert.equal(user.password ?? user.passwordHash, undefined, 'nunca se filtra el hash')
 
   const me = await fetch(`${url}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
