@@ -46,6 +46,12 @@ export function createMeRouter({ useCases, tokens }) {
     res.json(await useCases.getStreak(req.userId, req.query.date))
   })
 
+  // Aparte de /streak por la misma razon que /streak esta aparte de /today: la racha la pide el
+  // widget en cada sincronizacion y esto solo lo pide una pantalla que casi nadie abre a diario.
+  router.get('/stats', async (req, res) => {
+    res.json(await useCases.getStats(req.userId, req.query))
+  })
+
   router.patch('/profile', async (req, res) => {
     res.json(await useCases.updateProfile(req.userId, req.body ?? {}))
   })
