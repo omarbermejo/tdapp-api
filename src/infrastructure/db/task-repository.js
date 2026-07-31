@@ -49,6 +49,29 @@ export function createTaskRepository(db) {
       return toDomain(running.get(userId))
     },
 
+    /**
+     * Cuantas tareas cerro el usuario cada dia, del mas reciente al mas viejo.
+     *
+     * Agrupa por `due_date` y no por `completed_at`: `due_date` es el dia LOCAL que mando el cliente
+     * (texto 'YYYY-MM-DD'), mientras `completed_at` es un timestamp UTC. Con el segundo, cerrar algo a
+     * las 11 de la noche en Mexico contaria para el dia siguiente y la racha se rompaeria sola — es la
+     * misma razon por la que el resto del API compara texto en vez de adivinar zonas.
+     *
+     * Los dias sin nada cerrado simplemente no salen; quien cuenta la racha ve el hueco.
+     */
+    async doneByDay(userId, { from, to }) {
+      return db
+        .prepare(`SELECT due_date AS date, COUNT(*) AS done FROM tasks
+          WHERE user_id = ?
+            AND status = 'done'
+            AND due_date IS NOT NULL
+            AND due_date >= ?
+            AND due_date <= ?
+          GROUP BY due_date
+          ORDER BY due_date DESC`)
+        .all(userId, from, to)
+    },
+
     async listByUser(userId, { status, date, focusArea } = {}) {
       // Los filtros son opcionales: `? IS NULL OR columna = ?` evita armar SQL a mano.
       const rows = db

@@ -63,10 +63,25 @@ cae en defaults para que el onboarding se pueda saltar.
 |---|---|---|
 | `GET` | `/me` | perfil |
 | `GET` | `/me/today` | `?date=YYYY-MM-DD` — todo el día en una llamada |
+| `GET` | `/me/streak` | `?date=YYYY-MM-DD` — racha, mejor marca y el punteo de la semana |
 | `POST` | `/me/devices` | `{ token, platform }` guarda el Expo push token |
 
 `/me/today` devuelve `{ date, user, counts, next, running, tasks }`: exactamente lo que
 necesitan el widget de iOS, el de Android y la Live Activity, sin encadenar peticiones.
+
+`/me/streak` devuelve `{ date, days, best, week }`, con `week` de lunes a domingo y un `done` por día.
+Va aparte de `/today` porque son dos preguntas distintas: el widget de racha no necesita las tareas
+del día ni al contrario, y juntarlas obligaría a la mitad de los widgets a traerse datos que no usan.
+
+Dos decisiones de la racha, las dos en `domain/streak.js`:
+
+- **Se agrupa por `due_date` y no por `completed_at`.** `due_date` es el día local que mandó el
+  cliente; `completed_at` es UTC. Con el segundo, cerrar algo a las 11 de la noche en México contaría
+  para el día siguiente y la racha se rompería sola.
+- **El día de hoy no cuenta hasta que cierras algo, pero tampoco la rompe.** Una racha que se pone en
+  cero a las 00:01 castiga por no haber hecho nada a medianoche, y ese es justo el mensaje que hace
+  que alguien con TDAH abandone la app. La racha se mide desde el último día con algo cerrado: si es
+  hoy o ayer, sigue viva.
 
 ## Errores
 
@@ -85,3 +100,7 @@ para que la app marque el campo exacto.
 - **Sin rate limit en `/auth/login`.** Agregar antes de exponerlo a internet.
 - **Sin refresh tokens.** El JWT dura 30 días y ya.
 - **SQLite.** Migrar a Postgres cuando haya más de una instancia.
+- **`expo-widgets` no soporta Android todavía.** Su `WidgetsModule.kt` tiene 10 líneas contra 149 del
+  de iOS y el widget de Glance pinta literalmente el nombre del widget (`Text(widgetName)`), así que
+  el widget de Android va escrito a mano en Kotlin. No afecta al API — los dos comen del mismo
+  `/me/today` y `/me/streak`.

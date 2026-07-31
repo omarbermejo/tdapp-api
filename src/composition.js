@@ -1,6 +1,7 @@
 import { createTask } from './application/create-task.js'
 import { deleteTask } from './application/delete-task.js'
 import { getProfile } from './application/get-profile.js'
+import { getStreak } from './application/get-streak.js'
 import { getToday } from './application/get-today.js'
 import { listTasks } from './application/list-tasks.js'
 import { loginUser } from './application/login-user.js'
@@ -70,6 +71,7 @@ export function buildApp(overrides = {}) {
     deleteTask: deleteTask(deps),
     toggleTimer: toggleTimer(deps),
     getToday: getToday(deps),
+    getStreak: getStreak(deps),
     registerDevice: registerDevice(deps),
   }
 

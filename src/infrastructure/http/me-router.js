@@ -19,6 +19,13 @@ export function createMeRouter({ useCases, tokens }) {
     res.json(await useCases.getToday(req.userId, req.query.date))
   })
 
+  // La racha va aparte de /today y no dentro: son dos preguntas distintas y el widget de racha no
+  // necesita las tareas del dia ni al contrario. Meterlas juntas obligaria a la mitad de los widgets
+  // a traerse datos que no usan.
+  router.get('/streak', async (req, res) => {
+    res.json(await useCases.getStreak(req.userId, req.query.date))
+  })
+
   router.patch('/profile', async (req, res) => {
     res.json(await useCases.updateProfile(req.userId, req.body ?? {}))
   })
