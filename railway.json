@@ -4,7 +4,6 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "preDeployCommand": "npm run release",
     "startCommand": "npm start",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 60,

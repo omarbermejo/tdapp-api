@@ -94,9 +94,18 @@ para que la app marque el campo exacto.
 ## Producción
 
 ```bash
-npm start          # node --env-file-if-exists=.env: las variables las inyecta la plataforma
-npm run release    # migra. Va ANTES de arrancar o `openDatabase` lanza "Base sin migrar"
+npm start          # migra y arranca, en ese orden
+npm run release    # solo migra. Va ANTES de arrancar o `openDatabase` lanza "Base sin migrar"
 ```
+
+**La migración vive dentro de `npm start`, no en un hook de la plataforma.** En Railway estuvo un rato
+como `preDeployCommand` y el síntoma fue engañoso: el build terminaba bien, la imagen se subía, y el
+servicio **nunca arrancaba ni dejaba un solo log de runtime**. Un pre-deploy que falla bloquea la
+promoción del deployment y sus logs no salen junto a los del servicio, así que no hay nada que leer.
+Encadenarlo al arranque quita esa fase silenciosa y manda la salida de la migración a los logs normales,
+donde sí se ve qué pasó. Es idempotente (`migrate.js` consulta lo pendiente y sale si no hay nada), así
+que reiniciar no cuesta nada; con varias réplicas habría que volver a separarlo — pero eso ya lo impide
+SQLite, no esto.
 
 Requiere **Node ≥ 24** (declarado en `engines`): el runtime importa `DatabaseSync` de `node:sqlite`,
 que en 22 necesita `--experimental-sqlite` y en 20 no existe.
