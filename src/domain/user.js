@@ -65,6 +65,17 @@ export const DEFAULT_PROFILE = Object.freeze({
 })
 
 /**
+ * La unica regla de la contraseña y su unico mensaje. Devuelve el problema o null.
+ *
+ * Vive aparte porque la comparten el registro y el reset, y el reset no puede llamar a
+ * createIdentity: esa pide correo y nombre, que ahi no existen.
+ */
+export const passwordProblem = (password) =>
+  (typeof password === 'string' ? password : '').length < MIN_PASSWORD
+    ? `Minimo ${MIN_PASSWORD} caracteres`
+    : null
+
+/**
  * Lo minimo para tener cuenta. Un formulario largo es la forma mas rapida de perder
  * a un usuario con TDAH: el perfil se afina despues, en onboarding.
  */
@@ -77,7 +88,8 @@ export function createIdentity(input = {}) {
   if (!EMAIL.test(email)) fields.email = 'Escribe un correo valido'
   if (name.length < 2) fields.name = 'Tu nombre necesita al menos 2 letras'
   if (name.length > 40) fields.name = 'Maximo 40 caracteres'
-  if (password.length < MIN_PASSWORD) fields.password = `Minimo ${MIN_PASSWORD} caracteres`
+  const weak = passwordProblem(password)
+  if (weak) fields.password = weak
 
   if (Object.keys(fields).length) throw ValidationError(fields)
 

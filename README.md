@@ -7,7 +7,7 @@ cp .env.example .env
 node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))'  # pega esto en JWT_SECRET
 npm install
 npm run dev     # recarga al guardar
-npm test        # 19 tests
+npm test        # 92 tests
 ```
 
 Al arrancar imprime la IP de LAN. Esa es la que usa el celular; `localhost` solo funciona en el simulador.
@@ -34,6 +34,30 @@ Todo lo de `/tasks` y `/me` va con `Authorization: Bearer <token>`.
 | `POST` | `/auth/login` | `{ email, password }` → `{ token, user }` |
 | `POST` | `/auth/google` | `{ idToken }` → `{ token, user }`, crea la cuenta si el correo es nuevo |
 | `POST` | `/auth/apple` | `{ idToken, name? }` → `{ token, user }` |
+| `POST` | `/auth/forgot` | `{ email }` → **`202` siempre** |
+| `POST` | `/auth/reset` | `{ email, code, password }` → `{ token, user }` |
+| `DELETE` | `/me` | `{ password }` en cuentas de correo, vacío en las de Google/Apple → `204` |
+
+**`/auth/forgot` contesta `202` exista la cuenta o no**, sea de Google o esté en cooldown. Si un correo
+sin cuenta diera `404`, el endpoint sería un buscador de correos registrados: se pregunta uno a uno y la
+respuesta lo dice. `/auth/reset` sostiene lo mismo — correo inexistente, cuenta de Google y código
+equivocado dan el **mismo** `400`. Son los dos únicos endpoints de código que reciben el correo en el
+body, y es inevitable: todavía no hay sesión de la que sacar de quién es la cuenta.
+
+Lo que hace que el 202 no sea una mentira es `skipIfActive`: sin él, pedir el código dos veces seguidas
+daría `429`, y un `429` solo puede salir de una cuenta real. El limitador (**5 por correo cada 15 min**)
+salta *antes* del caso de uso y sin tocar la base, así que frena igual con un correo que no existe.
+
+Resetear **deja el correo verificado de paso**: el código llegó a ese buzón y volvió escrito, que es
+exactamente la prueba que pide la verificación. Sin eso, quien recupera su contraseña sin haber
+verificado saldría a la pantalla del código a demostrar otra vez lo que acaba de demostrar.
+
+**`DELETE /me` va antes del gate de correo verificado**, con `GET /me` y no con el resto: una cuenta sin
+verificar también tiene derecho a irse, y es justo con una cuenta recién creada con la que App Review
+prueba esto (guideline 5.1.1(v)). Un solo `DELETE FROM users` se lleva tareas, perfil, dispositivos y
+códigos — las cuatro tablas hijas declaran `ON DELETE CASCADE` y `sqlite.js` prende `PRAGMA foreign_keys`.
+El token sigue firmado hasta que venza y no hay lista negra: no abre nada porque cada consulta filtra por
+`user_id` sobre una fila que ya no existe.
 
 Solo `email`, `password` y `name` son obligatorios al registrar. El resto del perfil
 (`birthDate`, `focusAreas`, `peakEnergy`, `reminderStyle`, `reminderHour`, `accentColor`)
@@ -130,10 +154,23 @@ es la IP del proxy para todo el tráfico y el primer usuario que falle ocho vece
 
 ## Deuda consciente
 
-- **Sin scheduler de push.** `dueAt` se guarda pero nadie envía nada: la app programa
-  notificaciones locales con `expo-notifications`, que sobreviven a que se cierre la app y
-  no cuestan servidor. Los tokens ya se recolectan para cuando haga falta push de verdad
-  (rachas, recordatorios entre dispositivos).
+- **Sin push, y a propósito.** La app programa notificaciones locales con `expo-notifications`: el
+  recordatorio diario a `reminder_hour` (trigger `DAILY`, repite sin que la app corra) y un aviso diez
+  minutos antes de cada tarea pendiente con `due_at` dentro de los próximos 7 días, con techo explícito
+  de 60 por el límite de 64 pendientes de iOS. Sobreviven a que se cierre la app y no cuestan servidor,
+  así que el API no envía nada y no hay scheduler.
+
+  `POST /me/devices`, `register-device.js`, `device-repository.js` y la tabla `devices` siguen en pie
+  pero **nadie escribe en ellos**. La frase que estaba aquí antes decía que los tokens "ya se
+  recolectan": era falsa. La app leía `extra.eas.projectId` de un `app.json` que nunca lo tuvo, así que
+  `registerPushDevice` salía siempre por `return 'unsupported'` y la tabla lleva vacía desde el primer
+  día. Ese código se borró de la app; el permiso del sistema se quedó, porque los avisos locales lo
+  necesitan igual.
+
+  El push se gana cuando exista algo que el teléfono NO pueda saber al agendar — un aviso que nombre tu
+  próxima tarea (el texto se congela al agendar) o cualquier cosa entre dispositivos. Ese día hacen
+  falta además: proyecto de EAS, `extra.eas.projectId` en `app.json`, `remote-notification` en
+  `UIBackgroundModes` y un scheduler aquí, que es la parte cara.
 - **Sin refresh tokens.** El JWT dura 30 días y ya.
 - **SQLite.** Migrar a Postgres cuando haya más de una instancia. Hasta entonces el despliegue está
   acotado a UNA: el freno del login vive en memoria del proceso, así que con réplicas cada una llevaría

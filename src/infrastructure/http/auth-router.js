@@ -1,12 +1,13 @@
 import { Router } from 'express'
 
 import { catalogs } from '../../domain/user.js'
-import { createLoginLimiter } from './rate-limit.js'
+import { createForgotLimiter, createLoginLimiter } from './rate-limit.js'
 import { requireAuth } from './require-auth.js'
 
 export function createAuthRouter({ useCases, tokens }) {
   const router = Router()
   const limitLogin = createLoginLimiter()
+  const limitForgot = createForgotLimiter()
 
   router.get('/catalogs', (_req, res) => res.json(catalogs))
 
@@ -33,8 +34,33 @@ export function createAuthRouter({ useCases, tokens }) {
     res.json(await useCases.loginWithApple(req.body ?? {}))
   })
 
-  // Verificar y reenviar exigen sesion pero NO correo verificado, y no reciben el correo en
-  // el body: asi no hay forma de averiguar que correos existen.
+  /**
+   * "Olvide mi contraseña". Contesta **202 siempre**: exista la cuenta, sea de Google o este en
+   * cooldown. Es lo que mantiene en pie la promesa de mas abajo — desde fuera no se puede
+   * averiguar que correos tienen cuenta.
+   *
+   * El limitador va antes y cuenta por correo: este endpoint manda correos que pagamos nosotros.
+   */
+  router.post('/forgot', limitForgot, async (req, res) => {
+    await useCases.forgotPassword(req.body ?? {})
+    res.sendStatus(202)
+  })
+
+  /**
+   * ponytail: /reset no lleva limitador propio. El freno es el contador de intentos del OTP (5 por
+   * cuenta sobre un millon de codigos posibles) y el formato se valida antes de hashear, asi que un
+   * intento a ciegas no cuesta ni scrypt. Techo: desde una IP se pueden quemar los 5 intentos de
+   * muchas cuentas y obligarlas a pedir codigo nuevo — si alguien lo hace, entra el mismo limitador
+   * por IP del login.
+   */
+  router.post('/reset', async (req, res) => {
+    res.json(await useCases.resetPassword(req.body ?? {}))
+  })
+
+  // Verificar y reenviar exigen sesion pero NO correo verificado, y no reciben el correo en el
+  // body: asi no hay forma de averiguar que correos existen. Los unicos que si lo reciben son
+  // /forgot y /reset, que no pueden tener sesion todavia, y por eso los dos contestan lo mismo
+  // exista o no la cuenta.
   router.post('/verify', requireAuth(tokens), async (req, res) => {
     res.json(await useCases.verifyEmail(req.userId, req.body ?? {}))
   })

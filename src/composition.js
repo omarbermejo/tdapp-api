@@ -1,5 +1,7 @@
 import { createTask } from './application/create-task.js'
+import { deleteAccount } from './application/delete-account.js'
 import { deleteTask } from './application/delete-task.js'
+import { forgotPassword } from './application/forgot-password.js'
 import { getProfile } from './application/get-profile.js'
 import { getStreak } from './application/get-streak.js'
 import { getToday } from './application/get-today.js'
@@ -9,6 +11,7 @@ import { loginWithIdentity } from './application/login-with-identity.js'
 import { registerDevice } from './application/register-device.js'
 import { registerUser } from './application/register-user.js'
 import { resendCode } from './application/resend-code.js'
+import { resetPassword } from './application/reset-password.js'
 import { sendVerificationCode } from './application/send-verification-code.js'
 import { toggleTimer } from './application/toggle-timer.js'
 import { updateProfile } from './application/update-profile.js'
@@ -62,8 +65,11 @@ export function buildApp(overrides = {}) {
     loginWithApple: loginWithIdentity(deps, deps.apple, 'apple'),
     verifyEmail: verifyEmail(deps),
     resendCode: resendCode(deps),
+    forgotPassword: forgotPassword(deps),
+    resetPassword: resetPassword(deps),
     getProfile: getProfile(deps),
     updateProfile: updateProfile(deps),
+    deleteAccount: deleteAccount(deps),
 
     createTask: createTask(deps),
     listTasks: listTasks(deps),

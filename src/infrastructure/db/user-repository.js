@@ -74,6 +74,27 @@ export function createUserRepository(db) {
   const credentials = db.prepare(
     "UPDATE users SET name = ?, password_hash = ?, updated_at = datetime('now') WHERE id = ?"
   )
+  /**
+   * La contraseña nueva de "olvide mi contraseña".
+   *
+   * Sella el correo de paso, y no es un extra: el codigo llego a ESE buzon y volvio escrito, que
+   * es exactamente la prueba que pide email_verify. Sin esto, quien recupera su contraseña sin
+   * haber verificado sale de aqui a la pantalla del codigo a demostrar otra vez lo que acaba de
+   * demostrar. COALESCE para no mover una fecha que ya existia.
+   *
+   * No se reusa replaceCredentials aunque el UPDATE se parezca: esa escribe `name`, que el reset
+   * no tiene por que tocar, y su docblock la reserva para cuentas sin verificar. El dia que
+   * alguien la extienda con la logica que su nombre promete, el reset heredaria el cambio sin
+   * pedirlo.
+   */
+  const newPassword = db.prepare(
+    `UPDATE users
+        SET password_hash = ?,
+            email_verified_at = COALESCE(email_verified_at, datetime('now')),
+            updated_at = datetime('now')
+      WHERE id = ?`
+  )
+  const del = db.prepare('DELETE FROM users WHERE id = ?')
 
   // node:sqlite no trae helper de transaccion: se hace a mano y siempre con ROLLBACK en el catch.
   const inTransaction = (work) => {
@@ -130,6 +151,25 @@ export function createUserRepository(db) {
     async replaceCredentials(id, { name, passwordHash }) {
       credentials.run(name, passwordHash, id)
       return toDomain(byId.get(id))
+    },
+
+    /** Cambia solo la contraseña y deja el correo verificado. Ver `newPassword`. */
+    async setPassword(id, passwordHash) {
+      newPassword.run(passwordHash, id)
+      return toDomain(byId.get(id))
+    },
+
+    /**
+     * Borra la cuenta entera con un solo statement y sin transaccion.
+     *
+     * Las cuatro tablas hijas (tasks, user_profiles, devices, otp_codes) declaran
+     * ON DELETE CASCADE y sqlite.js prende PRAGMA foreign_keys, asi que el motor se lleva
+     * todo dentro del mismo DELETE. Borrar a mano tabla por tabla seria repetir en JavaScript
+     * lo que el esquema ya garantiza, y ahi si haria falta una transaccion — y la primera
+     * tabla nueva que alguien agregara se quedaria fuera sin que nada avisara.
+     */
+    async remove(id) {
+      return del.run(id).changes > 0
     },
   }
 }

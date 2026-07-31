@@ -13,6 +13,26 @@ export function createMeRouter({ useCases, tokens }) {
     res.json(await useCases.getProfile(req.userId))
   })
 
+  /**
+   * Borrar la cuenta. Va ARRIBA de requireVerified, con GET / y no con el resto: una cuenta sin
+   * verificar tambien tiene derecho a irse, y es justo con una cuenta recien creada con la que App
+   * Review prueba esto (guideline 5.1.1(v)). Detras del gate, la cuenta atrapada en la pantalla del
+   * codigo seria la unica de la app que no se puede borrar.
+   *
+   * 204 y sin cuerpo: no hay nada que contar de una cuenta que ya no existe.
+   *
+   * ponytail: el token sigue firmado hasta que venza (30 dias) y no hay lista negra. Hoy no abre
+   * nada, y no por suerte: cada consulta filtra por user_id sobre una fila que ya no esta (GET /me
+   * contesta 404) y cualquier INSERT rebota contra la clave ajena. La app borra su almacen en el
+   * mismo gesto. Techo: el dia que exista un endpoint que no cuelgue de la fila del usuario, hace
+   * falta invalidar de verdad — token_version en users y una lectura de la base en requireAuth,
+   * que hoy no toca la base a proposito.
+   */
+  router.delete('/', async (req, res) => {
+    await useCases.deleteAccount(req.userId, req.body ?? {})
+    res.sendStatus(204)
+  })
+
   router.use(requireVerified())
 
   router.get('/today', async (req, res) => {

@@ -1,5 +1,5 @@
 import { TooManyRequestsError } from '../../domain/errors.js'
-import { LOGIN_POLICY, createLimiter } from '../../domain/rate-limit.js'
+import { FORGOT_POLICY, LOGIN_POLICY, createLimiter } from '../../domain/rate-limit.js'
 
 /**
  * El freno de `/auth/login` como middleware.
@@ -42,4 +42,25 @@ export function createLoginLimiter() {
   }
 
   return middleware
+}
+
+/**
+ * El freno de `/auth/forgot`. Sin `forgive`: aqui no hay un "entro bien" que perdone nada.
+ *
+ * Cuenta solo por correo (ver `FORGOT_POLICY`) y frena ANTES del caso de uso, sin consultar la
+ * base. Eso ultimo es deliberado: asi el 429 salta igual con un correo que no existe. Un limitador
+ * que solo frenara a las cuentas reales seria el buscador de correos registrados que el 202 de
+ * /auth/forgot esta evitando.
+ */
+export function createForgotLimiter() {
+  const limiter = createLimiter(FORGOT_POLICY)
+
+  return (req, _res, next) => {
+    const email = String(req.body?.email ?? '').trim().toLowerCase()
+    // Sin correo no hay a quien mandarle nada: pasa, y el caso de uso contesta 202 sin hacer nada.
+    if (email && limiter.hit(`email:${email}`, Date.now())) {
+      return next(TooManyRequestsError('Ya pediste varios codigos. Espera unos minutos.'))
+    }
+    next()
+  }
 }

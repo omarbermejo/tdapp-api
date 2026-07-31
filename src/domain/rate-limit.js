@@ -16,6 +16,20 @@
 export const LOGIN_POLICY = { tries: 8, windowMs: 10 * 60_000 }
 
 /**
+ * Cinco codigos de recuperacion por cuarto de hora, contados SOLO por correo.
+ *
+ * La asimetria con el login es a proposito. Alla el limite por correo no basta porque quien barre
+ * mil correos desde una IP esta probando CONTRASEÑAS y no toca el limite de ninguno. Aqui no hay
+ * secreto que adivinar: lo que se protege es la bandeja de otra persona y lo que pagamos por
+ * correo enviado, y las dos cosas son por correo. Contar tambien por IP frenaria a una oficina
+ * entera detras de un NAT sin evitar ni un correo de mas.
+ *
+ * Cinco es holgado para quien de verdad no recibe el codigo, y encima el cooldown del OTP ya topa
+ * cada cuenta a un correo por minuto: este limite es el techo de la hora, no el del minuto.
+ */
+export const FORGOT_POLICY = { tries: 5, windowMs: 15 * 60_000 }
+
+/**
  * Techo de claves vigiladas.
  *
  * Sin el, el propio limitador es el agujero: un atacante rotando IPs mete una entrada nueva por intento
