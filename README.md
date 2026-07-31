@@ -91,15 +91,44 @@ para que la app marque el campo exacto.
 `400` validación · `401` sin token o credenciales malas · `404` no existe o no es tuyo ·
 `409` duplicado o timer ocupado · `500` bug nuestro.
 
+## Producción
+
+```bash
+npm start          # node --env-file-if-exists=.env: las variables las inyecta la plataforma
+npm run release    # migra. Va ANTES de arrancar o `openDatabase` lanza "Base sin migrar"
+```
+
+Requiere **Node ≥ 24** (declarado en `engines`): el runtime importa `DatabaseSync` de `node:sqlite`,
+que en 22 necesita `--experimental-sqlite` y en 20 no existe.
+
+| variable | ¿obligatoria? | para qué |
+|---|---|---|
+| `JWT_SECRET` | **sí** | firma los tokens. `config.js` lanza al importarse sin ella |
+| `DB_PATH` | **en la práctica sí** | el disco de un contenedor es efímero: apúntala a un volumen montado o cada deploy borra las cuentas |
+| `CORS_ORIGIN` | recomendada | por defecto `*`, que solo sirve para Expo web en dev |
+| `PORT` | no | la inyecta la plataforma; el default es 3000 |
+| `RESEND_API_KEY` | no | vacía = el código de verificación sale en los logs en vez del correo |
+| `GOOGLE_CLIENT_IDS` / `APPLE_CLIENT_IDS` | no | vacías = `/auth/google` y `/auth/apple` responden 401 |
+
+`/auth/login` tiene freno de fuerza bruta: **8 intentos por ventana deslizante de 10 minutos**, contados
+por IP **y** por correo (uno solo deja hueco: por IP se salta rotando IPs, por correo se salta barriendo
+correos). El middleware va antes del caso de uso, así que un intento frenado no llega a comparar el hash
+—que es la parte cara— y entrar bien perdona los fallos anteriores.
+
+**`app.set('trust proxy', 1)` es obligatorio detrás de un proxy** y vale `1`, no `true`: sin él `req.ip`
+es la IP del proxy para todo el tráfico y el primer usuario que falle ocho veces bloquea al resto; con
+`true` se creería cualquier `X-Forwarded-For` de la petición y el atacante elegiría su propia IP.
+
 ## Deuda consciente
 
 - **Sin scheduler de push.** `dueAt` se guarda pero nadie envía nada: la app programa
   notificaciones locales con `expo-notifications`, que sobreviven a que se cierre la app y
   no cuestan servidor. Los tokens ya se recolectan para cuando haga falta push de verdad
   (rachas, recordatorios entre dispositivos).
-- **Sin rate limit en `/auth/login`.** Agregar antes de exponerlo a internet.
 - **Sin refresh tokens.** El JWT dura 30 días y ya.
-- **SQLite.** Migrar a Postgres cuando haya más de una instancia.
+- **SQLite.** Migrar a Postgres cuando haya más de una instancia. Hasta entonces el despliegue está
+  acotado a UNA: el freno del login vive en memoria del proceso, así que con réplicas cada una llevaría
+  su cuenta y el límite real sería el doble o el triple.
 - **`expo-widgets` no soporta Android todavía.** Su `WidgetsModule.kt` tiene 10 líneas contra 149 del
   de iOS y el widget de Glance pinta literalmente el nombre del widget (`Text(widgetName)`), así que
   el widget de Android va escrito a mano en Kotlin. No afecta al API — los dos comen del mismo

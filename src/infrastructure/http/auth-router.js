@@ -1,10 +1,12 @@
 import { Router } from 'express'
 
 import { catalogs } from '../../domain/user.js'
+import { createLoginLimiter } from './rate-limit.js'
 import { requireAuth } from './require-auth.js'
 
 export function createAuthRouter({ useCases, tokens }) {
   const router = Router()
+  const limitLogin = createLoginLimiter()
 
   router.get('/catalogs', (_req, res) => res.json(catalogs))
 
@@ -12,8 +14,15 @@ export function createAuthRouter({ useCases, tokens }) {
     res.status(201).json(await useCases.registerUser(req.body))
   })
 
-  router.post('/login', async (req, res) => {
-    res.json(await useCases.loginUser(req.body ?? {}))
+  /**
+   * El limitador va ANTES del caso de uso, asi que un intento frenado no llega ni a comparar el hash —
+   * que es lo que de verdad cuesta (scrypt esta calibrado para ser lento a proposito).
+   */
+  router.post('/login', limitLogin, async (req, res) => {
+    const session = await useCases.loginUser(req.body ?? {})
+    // Entro bien: los intentos fallidos de antes no deben seguir contando.
+    limitLogin.forgive(req.ip, req.body?.email)
+    res.json(session)
   })
 
   router.post('/google', async (req, res) => {

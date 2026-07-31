@@ -5,12 +5,13 @@
   "private": true,
   "scripts": {
     "dev": "node --env-file=.env --watch src/main.js",
-    "start": "node --env-file=.env src/main.js",
+    "start": "node --env-file-if-exists=.env src/main.js",
     "test": "node --env-file=.env --test",
     "db:migrate": "node --env-file-if-exists=.env node_modules/knex/bin/cli.js migrate:latest",
     "db:status": "node --env-file-if-exists=.env node_modules/knex/bin/cli.js migrate:status",
     "db:make": "node node_modules/knex/bin/cli.js migrate:make",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "release": "npm run db:migrate"
   },
   "dependencies": {
     "expo-widgets": "^57.0.7",
@@ -22,5 +23,8 @@
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.1",
     "knex": "^3.3.0"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }
