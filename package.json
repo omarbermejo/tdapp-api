@@ -11,7 +11,7 @@
     "db:status": "node --env-file-if-exists=.env node_modules/knex/bin/cli.js migrate:status",
     "db:make": "node node_modules/knex/bin/cli.js migrate:make",
     "lint": "expo lint",
-    "release": "npm run db:migrate"
+    "release": "node scripts/migrate.js"
   },
   "dependencies": {
     "expo-widgets": "^57.0.7",
