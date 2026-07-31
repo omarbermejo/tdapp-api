@@ -9,7 +9,7 @@ export function createTaskRouter({ useCases, tokens }) {
 
   router.get('/catalogs', (_req, res) => res.json(taskCatalogs))
 
-  router.use(requireAuth(tokens), requireVerified())
+  router.use(requireAuth({ tokens, useCases }), requireVerified())
 
   router.get('/', async (req, res) => {
     res.json(await useCases.listTasks(req.userId, req.query))

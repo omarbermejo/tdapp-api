@@ -61,17 +61,17 @@ export function createAuthRouter({ useCases, tokens }) {
   // body: asi no hay forma de averiguar que correos existen. Los unicos que si lo reciben son
   // /forgot y /reset, que no pueden tener sesion todavia, y por eso los dos contestan lo mismo
   // exista o no la cuenta.
-  router.post('/verify', requireAuth(tokens), async (req, res) => {
+  router.post('/verify', requireAuth({ tokens, useCases }), async (req, res) => {
     res.json(await useCases.verifyEmail(req.userId, req.body ?? {}))
   })
 
-  router.post('/resend', requireAuth(tokens), async (req, res) => {
+  router.post('/resend', requireAuth({ tokens, useCases }), async (req, res) => {
     await useCases.resendCode(req.userId)
     res.sendStatus(202)
   })
 
   // Se queda por compatibilidad; el canonico ahora es GET /me.
-  router.get('/me', requireAuth(tokens), async (req, res) => {
+  router.get('/me', requireAuth({ tokens, useCases }), async (req, res) => {
     res.json(await useCases.getProfile(req.userId))
   })
 

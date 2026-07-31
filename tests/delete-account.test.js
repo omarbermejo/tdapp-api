@@ -146,15 +146,46 @@ test('una cuenta de Google se borra sin mandar contraseña', async () => {
   assert.equal(rowsOf(user.id).users, 0)
 })
 
-/**
- * El token sigue firmado despues de borrar y no hay lista negra: lo que lo vuelve inofensivo es
- * que la fila ya no existe. Este test documenta ese comportamiento, que es el que sostiene el
- * `ponytail:` de me-router.js.
- */
 test('el token de una cuenta borrada ya no abre nada', async () => {
   const { token } = await register('zombie@nexgen.mx')
   assert.equal((await call('DELETE', '/me', { body: { password: 'supersecreta1' }, token })).status, 204)
 
-  assert.equal((await call('GET', '/me', { token })).status, 404)
-  assert.equal((await call('DELETE', '/me', { body: { password: 'supersecreta1' }, token })).status, 404)
+  // 401 y no 404: es lo unico que hace que la app borre la sesion que tiene guardada.
+  assert.equal((await call('GET', '/me', { token })).status, 401)
+  assert.equal((await call('GET', '/tasks', { token })).status, 401)
+  assert.equal((await call('DELETE', '/me', { body: { password: 'supersecreta1' }, token })).status, 401)
+})
+
+/**
+ * El agujero que abrio borrar cuentas, y que no puede volver.
+ *
+ * `users.id` es INTEGER PRIMARY KEY sin AUTOINCREMENT, asi que SQLite recicla el rowid: al borrar la
+ * cuenta con el id mas alto, la siguiente que se registre nace con ESE id. Como el JWT dura 30 dias y
+ * solo lleva `sub`, el token de la cuenta muerta pasaba a leer y escribir los datos de otra persona.
+ *
+ * Este test lo monta a proposito: borra la ultima cuenta y registra otra, que hereda el id.
+ */
+test('el token de una cuenta borrada no se apropia de la cuenta que hereda su id', async () => {
+  const { token: viejo, user: muerta } = await register('reciclada@nexgen.mx')
+  assert.equal((await call('DELETE', '/me', { body: { password: 'supersecreta1' }, token: viejo })).status, 204)
+
+  const { token: nuevo, user: nueva } = await register('heredera@nexgen.mx')
+  assert.equal(nueva.id, muerta.id, 'el id se reciclo: es justo lo que hace peligroso al token viejo')
+  assert.notEqual(nueva.email, muerta.email)
+
+  // El token viejo firma bien y su `sub` apunta a una fila que EXISTE. Lo que lo frena es que fue
+  // emitido antes de que naciera esa fila.
+  assert.equal((await call('GET', '/me', { token: viejo })).status, 401)
+  assert.equal(
+    (await call('POST', '/tasks', { body: { title: 'Escrita por un fantasma' }, token: viejo })).status,
+    401
+  )
+  assert.equal(
+    (await call('DELETE', '/me', { body: { password: 'supersecreta1' }, token: viejo })).status,
+    401,
+    'y menos todavia puede borrar la cuenta heredera'
+  )
+
+  // La cuenta nueva funciona con normalidad: el arreglo no la estorba.
+  assert.equal((await call('GET', '/me', { token: nuevo })).status, 200)
 })

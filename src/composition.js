@@ -1,3 +1,4 @@
+import { authenticate } from './application/authenticate.js'
 import { createTask } from './application/create-task.js'
 import { deleteAccount } from './application/delete-account.js'
 import { deleteTask } from './application/delete-task.js'
@@ -59,6 +60,8 @@ export function buildApp(overrides = {}) {
   deps.sendCode = sendVerificationCode(deps)
 
   const useCases = {
+    // Lo usa requireAuth en cada request autenticado, no un endpoint.
+    authenticate: authenticate(deps),
     registerUser: registerUser(deps),
     loginUser: loginUser(deps),
     loginWithGoogle: loginWithIdentity(deps, deps.google, 'google'),

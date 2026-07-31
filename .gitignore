@@ -1,4 +1,6 @@
 node_modules/
+# Igual que en la app: son artefactos del dev server, y `dev/logs/start.log` cambia en cada arranque.
+.expo/
 *.db
 .env
 data.db.bak

@@ -6,7 +6,7 @@ import { requireVerified } from './require-verified.js'
 /** Lo que consumen el widget, la Live Activity y la pantalla de inicio. */
 export function createMeRouter({ useCases, tokens }) {
   const router = Router()
-  router.use(requireAuth(tokens))
+  router.use(requireAuth({ tokens, useCases }))
 
   // GET / queda abierto a cuentas sin verificar: es de donde la app saca en que paso va.
   router.get('/', async (req, res) => {
@@ -21,12 +21,12 @@ export function createMeRouter({ useCases, tokens }) {
    *
    * 204 y sin cuerpo: no hay nada que contar de una cuenta que ya no existe.
    *
-   * ponytail: el token sigue firmado hasta que venza (30 dias) y no hay lista negra. Hoy no abre
-   * nada, y no por suerte: cada consulta filtra por user_id sobre una fila que ya no esta (GET /me
-   * contesta 404) y cualquier INSERT rebota contra la clave ajena. La app borra su almacen en el
-   * mismo gesto. Techo: el dia que exista un endpoint que no cuelgue de la fila del usuario, hace
-   * falta invalidar de verdad — token_version en users y una lectura de la base en requireAuth,
-   * que hoy no toca la base a proposito.
+   * El token sigue firmado hasta que venza (30 dias) y no hay lista negra, pero **no basta con que
+   * la fila haya desaparecido**: `users.id` no lleva AUTOINCREMENT, asi que SQLite recicla el rowid
+   * y la siguiente cuenta que se registre nace con el id de esta. Sin nada mas, el token de la
+   * cuenta borrada leeria y escribiria los datos de esa otra persona — comprobado, no teorico. Lo
+   * que cierra el agujero es `application/authenticate.js`, que corre en cada request autenticado
+   * y rechaza un token anterior a la cuenta que ocupa su id. Ahi esta el argumento completo.
    */
   router.delete('/', async (req, res) => {
     await useCases.deleteAccount(req.userId, req.body ?? {})
