@@ -1,4 +1,5 @@
 import { authenticate } from './application/authenticate.js'
+import { claimAvatar } from './application/claim-avatar.js'
 import { createTask } from './application/create-task.js'
 import { createWorkspace } from './application/create-workspace.js'
 import { deleteAccount } from './application/delete-account.js'
@@ -6,10 +7,12 @@ import { deleteTask } from './application/delete-task.js'
 import { deleteWorkspace } from './application/delete-workspace.js'
 import { forgotPassword } from './application/forgot-password.js'
 import { getProfile } from './application/get-profile.js'
+import { getAvatars } from './application/get-avatars.js'
 import { getStats } from './application/get-stats.js'
 import { getStreak } from './application/get-streak.js'
 import { getTaskCounts } from './application/get-task-counts.js'
 import { getToday } from './application/get-today.js'
+import { getWorkspace } from './application/get-workspace.js'
 import { listTasks } from './application/list-tasks.js'
 import { listWorkspaces } from './application/list-workspaces.js'
 import { loginUser } from './application/login-user.js'
@@ -27,6 +30,7 @@ import { updateWorkspace } from './application/update-workspace.js'
 import { verifyEmail } from './application/verify-email.js'
 import { OTP_RULES } from './domain/otp.js'
 import { config } from './infrastructure/config.js'
+import { createAvatarRepository } from './infrastructure/db/avatar-repository.js'
 import { createDeviceRepository } from './infrastructure/db/device-repository.js'
 import { createOtpRepository } from './infrastructure/db/otp-repository.js'
 import { openDatabase } from './infrastructure/db/sqlite.js'
@@ -50,6 +54,7 @@ export function buildApp(overrides = {}) {
     users: createUserRepository(db),
     tasks: createTaskRepository(db),
     workspaces: createWorkspaceRepository(db),
+    avatars: createAvatarRepository(db),
     devices: createDeviceRepository(db),
     otps: createOtpRepository(db),
     hasher: scryptHasher,
@@ -83,6 +88,10 @@ export function buildApp(overrides = {}) {
     updateProfile: updateProfile(deps),
     deleteAccount: deleteAccount(deps),
 
+    // El vestidor: que caras hay, cuales se ganaron y cual se elige de cada logro.
+    getAvatars: getAvatars(deps),
+    claimAvatar: claimAvatar(deps),
+
     createTask: createTask(deps),
     listTasks: listTasks(deps),
     updateTask: updateTask(deps),
@@ -95,6 +104,7 @@ export function buildApp(overrides = {}) {
     getTaskCounts: getTaskCounts(deps),
 
     listWorkspaces: listWorkspaces(deps),
+    getWorkspace: getWorkspace(deps),
     createWorkspace: createWorkspace(deps),
     updateWorkspace: updateWorkspace(deps),
     deleteWorkspace: deleteWorkspace(deps),

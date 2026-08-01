@@ -1,3 +1,4 @@
+import { ALL_AVATARS } from './avatar.js'
 import { ValidationError } from './errors.js'
 
 /**
@@ -18,26 +19,22 @@ export const ACCENT_COLOR = ['forest', 'olive', 'leaf', 'clay', 'copper']
 export const AUTH_PROVIDERS = ['password', 'google', 'apple', 'oauth']
 
 /**
- * El avatar no es un catalogo: es un PATRON.
+ * El avatar SI es un catalogo cerrado, y no siempre lo fue.
  *
- * Los memojis son archivos del bundle de la app (`assets/avatars/memoji-NN.webp`) y aqui no hay
- * ninguno, asi que una lista enumerada no validaria nada real — solo repetiria una lista que este
- * lado no puede comprobar, y que crece cada vez que se vuelve a cortar la lamina de Figma. Con
- * nombres cerrados, el dia que la app publique memoji-46 quien lo elija recibe un 400 hasta que se
- * deployee el API: un release de la app acoplado a un deploy del backend por un dato cosmetico.
+ * Nacio validandose por patron (`/^memoji-\d{2}$/`) con un argumento que entonces era correcto: los
+ * memojis son archivos del bundle de la app, aqui no hay ninguno, y una lista enumerada solo
+ * repetiria algo que este lado no puede comprobar.
  *
- * El patron da lo unico que un catalogo cerrado daria de verdad: forma acotada, alfabeto cerrado y
- * un 400 con nombre de campo para la basura. Un nombre valido que la app todavia no tenga cae en el
- * mismo fallback que el null (la inicial del nombre), que la app necesita implementar igual para
- * las versiones viejas.
+ * Eso dejo de ser cierto en cuanto las caras se GANAN. Ahora el catalogo no describe que archivos
+ * existen sino quien puede usar cada uno, y eso es permiso. Un permiso que valide el cliente no es
+ * un permiso: sin la lista aqui, un PATCH a mano se pone cualquier cara y el candado de la pantalla
+ * es decorativo. De paso queda fuera lo que el producto no ofrece — el bundle trae cuarenta y cinco
+ * caras y `ALL_AVATARS` son veintitres; las otras veintidos son reserva para logros futuros.
  *
- * Por eso tampoco sale en `catalogs`: la app ya genera la lista sola desde sus propios require, y
- * dos fuentes de verdad aqui es drift garantizado — con la de este lado siempre en el equivocado.
- *
- * ponytail: \d{2} topa en memoji-99. Pasar de ahi cambia tambien el esquema de nombres de la app,
- * asi que los dos lados se enteran a la vez.
+ * Sigue sin salir en `catalogs`, pero por otra razon que antes: ahora hay un endpoint entero para
+ * esto (`GET /me/avatars`), porque la respuesta depende de la persona y `catalogs` es publico.
  */
-const AVATAR = /^memoji-\d{2}$/
+const AVATAR = (value) => ALL_AVATARS.includes(value)
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 const MIN_PASSWORD = 8
@@ -171,12 +168,15 @@ export function createProfile(input = {}, current = DEFAULT_PROFILE) {
    * que reminderHour, donde null no borra porque sin hora no hay recordatorio. No pasa por `pick`
    * a proposito: `pick` trata '' como "no tocar" y aqui quitarse la cara es una eleccion tan valida
    * como ponersela. `str` devuelve '' para lo que no es texto, asi que numeros, arrays y objetos
-   * caen solos contra el patron.
+   * caen solos contra el catalogo.
+   *
+   * Aqui solo se comprueba que la cara EXISTA en el producto. Si ademas esta ganada lo decide
+   * `update-profile`, que es quien puede mirar la tabla: esta funcion es pura y no tiene con que.
    */
   let avatar = current.avatar
   if (has('avatar')) {
     avatar = input.avatar == null ? null : str(input.avatar)
-    if (avatar !== null && !AVATAR.test(avatar)) fields.avatar = 'Elige un avatar de la lista'
+    if (avatar !== null && !AVATAR(avatar)) fields.avatar = 'Elige un avatar de la lista'
   }
 
   const profile = {

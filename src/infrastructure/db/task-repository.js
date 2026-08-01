@@ -130,15 +130,16 @@ export function createTaskRepository(db) {
      *
      * Agrupa por `due_date` por lo mismo que las otras dos: es el dia LOCAL que mando el cliente.
      */
-    async plannedByDay(userId, { from, to }) {
+    async plannedByDay(userId, { from, to, workspaceId = null }) {
       return db
         .prepare(`SELECT due_date AS date, COUNT(*) AS planned FROM tasks
           WHERE user_id = ?
             AND due_date IS NOT NULL
             AND due_date >= ?
             AND due_date <= ?
+            AND (? IS NULL OR workspace_id = ?)
           GROUP BY due_date`)
-        .all(userId, from, to)
+        .all(userId, from, to, workspaceId, workspaceId)
     },
 
     /**
@@ -149,7 +150,7 @@ export function createTaskRepository(db) {
      * resolver los minutos de cada grupo — es nullable, y ahi null significa "usa lo que sugiere el
      * tamaño", que es una regla de dominio y no de SQL.
      */
-    async doneStats(userId, { from, to }) {
+    async doneStats(userId, { from, to, workspaceId = null }) {
       return db
         .prepare(`SELECT due_date AS date, focus_area AS focusArea, size, minutes, COUNT(*) AS done
           FROM tasks
@@ -158,8 +159,9 @@ export function createTaskRepository(db) {
             AND due_date IS NOT NULL
             AND due_date >= ?
             AND due_date <= ?
+            AND (? IS NULL OR workspace_id = ?)
           GROUP BY due_date, focus_area, size, minutes`)
-        .all(userId, from, to)
+        .all(userId, from, to, workspaceId, workspaceId)
     },
 
     async countByStatus(userId) {
@@ -190,7 +192,7 @@ export function createTaskRepository(db) {
      */
     // `backlog` cae en null y no en undefined: node:sqlite no liga undefined, y quien llama sin el
     // filtro (getToday) lo omite del objeto.
-    async listByUser(userId, { status, date, focusArea, backlog = null } = {}) {
+    async listByUser(userId, { status, date, focusArea, workspaceId = null, backlog = null } = {}) {
       // Los filtros son opcionales: `? IS NULL OR columna = ?` evita armar SQL a mano.
       const rows = db
         .prepare(`SELECT ${COLUMNS} FROM tasks
@@ -198,9 +200,13 @@ export function createTaskRepository(db) {
             AND (? IS NULL OR status = ?)
             AND (? IS NULL OR due_date = ?)
             AND (? IS NULL OR focus_area = ?)
+            AND (? IS NULL OR workspace_id = ?)
             AND (? IS NULL OR due_date < ? OR due_date IS NULL)
           ORDER BY status = 'done', position IS NULL, position, due_at IS NULL, due_at, id`)
-        .all(userId, status, status, date, date, focusArea, focusArea, backlog, backlog)
+        .all(
+          userId, status, status, date, date, focusArea, focusArea,
+          workspaceId, workspaceId, backlog, backlog
+        )
       return rows.map(toDomain)
     },
 

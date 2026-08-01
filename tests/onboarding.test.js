@@ -288,15 +288,26 @@ test('el avatar guarda el memoji, lo borra con null y sobrevive a un parche de o
   const ok = await call(url, 'PATCH', '/me/profile', { token, body: { avatar: 'memoji-07' } })
   assert.equal((await ok.json()).user.avatar, 'memoji-07')
 
-  // Un memoji que esta version de la app todavia no trae entra igual: el catalogo vive en el bundle
-  // del cliente y este lado no puede saberlo. Este assert ES la decision de validar por patron.
-  const futuro = await call(url, 'PATCH', '/me/profile', { token, body: { avatar: 'memoji-45' } })
-  assert.equal((await futuro.json()).user.avatar, 'memoji-45')
+  /*
+    Una cara que existe en el bundle pero NO en el producto se rechaza con 400.
+
+    Este assert es el que cambio de signo cuando las caras pasaron a ganarse: antes decia que
+    memoji-45 entraba, porque el catalogo vivia del lado del cliente. Ahora el catalogo es permiso, y
+    de las cuarenta y cinco del bundle el producto solo ofrece veintitres.
+  */
+  const reserva = await call(url, 'PATCH', '/me/profile', { token, body: { avatar: 'memoji-45' } })
+  assert.equal(reserva.status, 400)
+  assert.ok((await reserva.json()).fields.avatar)
+
+  // Una de las que se ganan da 403 y no 400: existe, pero no es suya. Los datos estan bien; lo que
+  // falta es el logro.
+  const ajena = await call(url, 'PATCH', '/me/profile', { token, body: { avatar: 'memoji-09' } })
+  assert.equal(ajena.status, 403)
 
   // Un parche de otro campo no lo mueve, y persiste en una lectura nueva.
   await call(url, 'PATCH', '/me/profile', { token, body: { accentColor: 'clay' } })
   const me = await call(url, 'GET', '/me', { token })
-  assert.equal((await me.json()).user.avatar, 'memoji-45', 'el avatar persiste entre peticiones')
+  assert.equal((await me.json()).user.avatar, 'memoji-07', 'el avatar persiste entre peticiones')
 
   // null lo borra: volver a la inicial es una eleccion tan valida como elegir cara.
   const borrado = await call(url, 'PATCH', '/me/profile', { token, body: { avatar: null } })

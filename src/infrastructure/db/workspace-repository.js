@@ -37,15 +37,22 @@ export function createWorkspaceRepository(db) {
    * El `AND t.user_id = w.user_id` del JOIN es redundante mientras la FK sea correcta, y se queda
    * igual: es la clase de dato que no se puede filtrar mal ni una vez.
    */
-  const withCounts = db.prepare(`SELECT
+  const COUNTED = `SELECT
       w.id, w.name, w.icon, w.accent, w.position, w.created_at AS createdAt,
       COUNT(t.id) AS total,
       COALESCE(SUM(t.status = 'done'), 0) AS done
     FROM workspaces w
-    LEFT JOIN tasks t ON t.workspace_id = w.id AND t.user_id = w.user_id
+    LEFT JOIN tasks t ON t.workspace_id = w.id AND t.user_id = w.user_id`
+
+  const withCounts = db.prepare(`${COUNTED}
     WHERE w.user_id = ?
     GROUP BY w.id
     ORDER BY w.position, w.id`)
+
+  /** El mismo conteo para UNO solo: es la cabecera de la pantalla de detalle. */
+  const oneWithCounts = db.prepare(`${COUNTED}
+    WHERE w.user_id = ? AND w.id = ?
+    GROUP BY w.id`)
 
   return {
     async listWithCounts(userId) {
@@ -54,6 +61,11 @@ export function createWorkspaceRepository(db) {
 
     async findById(userId, id) {
       return byId.get(userId, Number(id))
+    },
+
+    /** Con `total` y `done`. Lo usa la pantalla de detalle; `findById` basta para validar un PATCH. */
+    async findByIdWithCounts(userId, id) {
+      return oneWithCounts.get(userId, Number(id))
     },
 
     async create(userId, workspace) {

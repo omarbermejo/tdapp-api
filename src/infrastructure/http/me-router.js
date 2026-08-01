@@ -61,6 +61,26 @@ export function createMeRouter({ useCases, tokens }) {
     res.json(await useCases.getTaskCounts(req.userId))
   })
 
+  /**
+   * El vestidor. No va en `/auth/catalogs` aunque suene a catalogo: la respuesta depende de quien
+   * pregunta — que logros lleva y que caras eligio — y `catalogs` es publico y sin usuario.
+   *
+   * `?date=` por lo mismo que en /streak: la mejor racha se mide en dias locales del cliente.
+   */
+  router.get('/avatars', async (req, res) => {
+    res.json(await useCases.getAvatars(req.userId, req.query.date))
+  })
+
+  /**
+   * Quedarse con una de las tres caras de un logro cumplido. Es la unica forma de ganar una: nada
+   * de esto pasa por PATCH /profile, que solo cambia la que llevas puesta.
+   *
+   * 200 y no 201: devuelve el vestidor entero al dia, no un recurso nuevo con URL propia.
+   */
+  router.post('/avatars', async (req, res) => {
+    res.json(await useCases.claimAvatar(req.userId, req.body ?? {}, req.query.date))
+  })
+
   router.patch('/profile', async (req, res) => {
     res.json(await useCases.updateProfile(req.userId, req.body ?? {}))
   })

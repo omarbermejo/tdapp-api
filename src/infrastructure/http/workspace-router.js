@@ -26,6 +26,10 @@ export function createWorkspaceRouter({ useCases, tokens }) {
     res.status(201).json(await useCases.createWorkspace(req.userId, req.body))
   })
 
+  router.get('/:id', async (req, res) => {
+    res.json(await useCases.getWorkspace(req.userId, req.params.id))
+  })
+
   router.patch('/:id', async (req, res) => {
     res.json(await useCases.updateWorkspace(req.userId, req.params.id, req.body))
   })

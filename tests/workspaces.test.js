@@ -208,3 +208,100 @@ test('un usuario no ve ni toca los espacios de otro', async () => {
   assert.equal((await call('PATCH', `/workspaces/${ajeno}`, { body: { name: 'Mio' }, token: otra })).status, 404)
   assert.equal((await call('DELETE', `/workspaces/${ajeno}`, { token: otra })).status, 404)
 })
+
+// --- el espacio como pantalla propia -------------------------------------------------------------
+
+test('GET /workspaces/:id trae el espacio con su progreso', async () => {
+  const { workspace } = await (
+    await call('POST', '/workspaces', { body: { name: 'Detalle', icon: 'graph-up' }, token: auth })
+  ).json()
+  for (const [title, done] of [['Una', true], ['Dos', false], ['Tres', false]]) {
+    const { task } = await (
+      await call('POST', '/tasks', {
+        body: { title, workspaceId: workspace.id, dueAt: '2026-08-05T12:00:00-06:00' },
+        token: auth,
+      })
+    ).json()
+    if (done) await call('PATCH', `/tasks/${task.id}`, { body: { status: 'done' }, token: auth })
+  }
+
+  const [status, body] = await json(await call('GET', `/workspaces/${workspace.id}`, { token: auth }))
+  assert.equal(status, 200)
+  assert.equal(body.workspace.name, 'Detalle')
+  assert.equal(body.workspace.total, 3)
+  assert.equal(body.workspace.done, 1)
+})
+
+test('un espacio que no existe o no es tuyo es 404, no una lista vacia', async () => {
+  assert.equal((await call('GET', '/workspaces/999999', { token: auth })).status, 404)
+  const otra = await signUp('workspaces-detalle@nexgen.mx', 'Ana')
+  const [, mios] = await json(await call('GET', '/workspaces', { token: auth }))
+  assert.equal((await call('GET', `/workspaces/${mios.workspaces[0].id}`, { token: otra })).status, 404)
+})
+
+test('?workspaceId= trae las tareas del espacio, de todos los dias', async () => {
+  const { workspace } = await (
+    await call('POST', '/workspaces', { body: { name: 'Filtrado', icon: 'leaf' }, token: auth })
+  ).json()
+  // Dos dias distintos y una sin fecha: la pantalla del espacio las quiere TODAS.
+  for (const dueAt of ['2026-08-06T12:00:00-06:00', '2026-08-07T12:00:00-06:00', null]) {
+    await call('POST', '/tasks', {
+      body: { title: `Del espacio ${dueAt ?? 'sin fecha'}`, workspaceId: workspace.id, dueAt },
+      token: auth,
+    })
+  }
+  // Y una FUERA del espacio, el mismo dia, que no debe salir.
+  await call('POST', '/tasks', {
+    body: { title: 'Ajena al espacio', dueAt: '2026-08-06T12:00:00-06:00' },
+    token: auth,
+  })
+
+  const [status, body] = await json(
+    await call('GET', `/tasks?workspaceId=${workspace.id}`, { token: auth })
+  )
+  assert.equal(status, 200)
+  assert.equal(body.tasks.length, 3)
+  assert.ok(body.tasks.every((t) => t.workspaceId === workspace.id))
+  assert.ok(!body.tasks.some((t) => t.title === 'Ajena al espacio'))
+})
+
+test('un workspaceId basura no filtra nada en vez de reventar', async () => {
+  const [status, body] = await json(await call('GET', '/tasks?workspaceId=abc', { token: auth }))
+  assert.equal(status, 200, 'Number("abc") || null cae en null, o sea sin filtro')
+  assert.ok(body.tasks.length > 0)
+})
+
+test('/me/stats?workspaceId= acota las estadisticas al espacio', async () => {
+  const { workspace } = await (
+    await call('POST', '/workspaces', { body: { name: 'Medido', icon: 'trophy' }, token: auth })
+  ).json()
+  const mk = async (title, workspaceId) => {
+    const { task } = await (
+      await call('POST', '/tasks', {
+        body: { title, workspaceId, size: 'deep', dueAt: '2026-08-08T12:00:00-06:00' },
+        token: auth,
+      })
+    ).json()
+    await call('PATCH', `/tasks/${task.id}`, { body: { status: 'done' }, token: auth })
+  }
+  await mk('Dentro 1', workspace.id)
+  await mk('Dentro 2', workspace.id)
+  await mk('Fuera', null)
+
+  const scoped = await (
+    await call('GET', `/me/stats?date=2026-08-08&workspaceId=${workspace.id}`, { token: auth })
+  ).json()
+  const all = await (await call('GET', '/me/stats?date=2026-08-08', { token: auth })).json()
+
+  assert.equal(scoped.totals.done, 2, 'solo las del espacio')
+  assert.ok(all.totals.done > scoped.totals.done, 'sin filtro cuenta mas')
+  const day = scoped.byDay.find((d) => d.date === '2026-08-08')
+  assert.equal(day.planned, 2, 'planned tambien va acotado')
+})
+
+test('/me/stats con un espacio ajeno devuelve ceros, no un 404', async () => {
+  // Un 404 aqui diria si un id que no es tuyo existe o no.
+  const res = await call('GET', '/me/stats?date=2026-08-08&workspaceId=999999', { token: auth })
+  assert.equal(res.status, 200)
+  assert.equal((await res.json()).totals.done, 0)
+})
