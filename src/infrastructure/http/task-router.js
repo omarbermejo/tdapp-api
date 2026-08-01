@@ -19,6 +19,15 @@ export function createTaskRouter({ useCases, tokens }) {
     res.status(201).json(await useCases.createTask(req.userId, req.body))
   })
 
+  /**
+   * Va ANTES de `/:id` y no es un detalle de estilo: `:id` es un comodin que casaria con la cadena
+   * "order" y mandaria esto a `updateTask` con id = 'order'. Declarada aqui, Express prueba las rutas
+   * en orden y esta gana.
+   */
+  router.patch('/order', async (req, res) => {
+    res.json(await useCases.orderTasks(req.userId, req.body?.ids))
+  })
+
   router.patch('/:id', async (req, res) => {
     res.json(await useCases.updateTask(req.userId, req.params.id, req.body))
   })

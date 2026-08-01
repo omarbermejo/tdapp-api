@@ -1,7 +1,9 @@
 import { authenticate } from './application/authenticate.js'
 import { createTask } from './application/create-task.js'
+import { createWorkspace } from './application/create-workspace.js'
 import { deleteAccount } from './application/delete-account.js'
 import { deleteTask } from './application/delete-task.js'
+import { deleteWorkspace } from './application/delete-workspace.js'
 import { forgotPassword } from './application/forgot-password.js'
 import { getProfile } from './application/get-profile.js'
 import { getStats } from './application/get-stats.js'
@@ -9,8 +11,10 @@ import { getStreak } from './application/get-streak.js'
 import { getTaskCounts } from './application/get-task-counts.js'
 import { getToday } from './application/get-today.js'
 import { listTasks } from './application/list-tasks.js'
+import { listWorkspaces } from './application/list-workspaces.js'
 import { loginUser } from './application/login-user.js'
 import { loginWithIdentity } from './application/login-with-identity.js'
+import { orderTasks } from './application/order-tasks.js'
 import { registerDevice } from './application/register-device.js'
 import { registerUser } from './application/register-user.js'
 import { resendCode } from './application/resend-code.js'
@@ -19,6 +23,7 @@ import { sendVerificationCode } from './application/send-verification-code.js'
 import { toggleTimer } from './application/toggle-timer.js'
 import { updateProfile } from './application/update-profile.js'
 import { updateTask } from './application/update-task.js'
+import { updateWorkspace } from './application/update-workspace.js'
 import { verifyEmail } from './application/verify-email.js'
 import { OTP_RULES } from './domain/otp.js'
 import { config } from './infrastructure/config.js'
@@ -27,6 +32,7 @@ import { createOtpRepository } from './infrastructure/db/otp-repository.js'
 import { openDatabase } from './infrastructure/db/sqlite.js'
 import { createTaskRepository } from './infrastructure/db/task-repository.js'
 import { createUserRepository } from './infrastructure/db/user-repository.js'
+import { createWorkspaceRepository } from './infrastructure/db/workspace-repository.js'
 import { createApp } from './infrastructure/http/app.js'
 import { createConsoleMailer } from './infrastructure/mail/console-mailer.js'
 import { createResendMailer } from './infrastructure/mail/resend-mailer.js'
@@ -43,6 +49,7 @@ export function buildApp(overrides = {}) {
   const deps = {
     users: createUserRepository(db),
     tasks: createTaskRepository(db),
+    workspaces: createWorkspaceRepository(db),
     devices: createDeviceRepository(db),
     otps: createOtpRepository(db),
     hasher: scryptHasher,
@@ -80,11 +87,18 @@ export function buildApp(overrides = {}) {
     listTasks: listTasks(deps),
     updateTask: updateTask(deps),
     deleteTask: deleteTask(deps),
+    orderTasks: orderTasks(deps),
     toggleTimer: toggleTimer(deps),
     getToday: getToday(deps),
     getStreak: getStreak(deps),
     getStats: getStats(deps),
     getTaskCounts: getTaskCounts(deps),
+
+    listWorkspaces: listWorkspaces(deps),
+    createWorkspace: createWorkspace(deps),
+    updateWorkspace: updateWorkspace(deps),
+    deleteWorkspace: deleteWorkspace(deps),
+
     registerDevice: registerDevice(deps),
   }
 

@@ -4,6 +4,7 @@ import { createAuthRouter } from './auth-router.js'
 import { errorHandler } from './error-handler.js'
 import { createMeRouter } from './me-router.js'
 import { createTaskRouter } from './task-router.js'
+import { createWorkspaceRouter } from './workspace-router.js'
 
 export function createApp({ useCases, tokens, corsOrigin }) {
   const app = express()
@@ -35,6 +36,7 @@ export function createApp({ useCases, tokens, corsOrigin }) {
   app.get('/health', (_req, res) => res.json({ ok: true }))
   app.use('/auth', createAuthRouter({ useCases, tokens }))
   app.use('/tasks', createTaskRouter({ useCases, tokens }))
+  app.use('/workspaces', createWorkspaceRouter({ useCases, tokens }))
   app.use('/me', createMeRouter({ useCases, tokens }))
   app.use(errorHandler)
 

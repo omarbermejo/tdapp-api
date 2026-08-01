@@ -37,8 +37,15 @@ const minutesOf = (row) => (row.minutes ?? SIZE_MINUTES[row.size] ?? 0) * row.do
  * eso es justo lo que `domain/streak.js` se niega a hacer; dividir entre los dias con algo cerrado
  * no significa nada. Si la pantalla lo quiere, es una division de una linea alla — no un campo del
  * API que hornee un argumento de producto.
+ *
+ * `planned` son las filas de `plannedByDay` y responden la otra pregunta: cuantas habia AGENDADAS
+ * ese dia, cerradas o no. Va como segundo parametro con default y no como un campo mas de `rows`
+ * porque son dos consultas distintas —una filtra por status y la otra no— y fusionarlas en SQL
+ * obligaria a un LEFT JOIN de la tabla contra si misma para no perder los dias que solo tienen
+ * pendientes. El default `[]` NO es decorativo: los tests de dominio llaman a esto con un solo
+ * argumento, y sin el `for` de abajo reventaria con "undefined is not iterable".
  */
-export function foldStats(rows) {
+export function foldStats(rows, planned = []) {
   const byDay = new Map()
   const byArea = new Map()
   let done = 0
@@ -62,9 +69,26 @@ export function foldStats(rows) {
     byArea.set(row.focusArea, area)
   }
 
+  /**
+   * Las agendadas se mezclan DESPUES, y creando la entrada si no existe.
+   *
+   * Un dia con puras pendientes no aparece en `rows` —ahi solo hay cerradas— asi que sin el `??` de
+   * abajo el dia mas cargado del mes podria no existir en `byDay`. Es el caso que mas importa: el
+   * mapa de calor se pinta para ver lo que viene, y lo que viene todavia no esta cerrado.
+   */
+  for (const row of planned) {
+    const day = byDay.get(row.date) ?? { date: row.date, done: 0, minutes: 0 }
+    day.planned = row.planned
+    byDay.set(row.date, day)
+  }
+
   return {
     // Por dia va en orden cronologico: es una serie de tiempo y se dibuja de izquierda a derecha.
-    byDay: [...byDay.values()].sort((a, b) => (a.date < b.date ? -1 : 1)),
+    // `planned` cae en `done` cuando nadie lo pidio: un dia no puede tener menos agendadas que
+    // cerradas, asi que ese es el piso honesto y no un 0 que borraria el dato.
+    byDay: [...byDay.values()]
+      .map((day) => ({ ...day, planned: day.planned ?? day.done }))
+      .sort((a, b) => (a.date < b.date ? -1 : 1)),
     // Por area va de mas a menos: es un ranking y lo primero que se lee es en que se fue el tiempo.
     byArea: [...byArea.values()].sort((a, b) => b.minutes - a.minutes),
     totals: { done, minutes },

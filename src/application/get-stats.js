@@ -19,5 +19,15 @@ export const getStats =
     if (span < 0) throw ValidationError({ from: 'El inicio no puede ser posterior al final' })
     if (span > STATS_MAX) throw ValidationError({ from: `Maximo ${STATS_MAX} dias` })
 
-    return { from: start, to, ...foldStats(await tasks.doneStats(userId, { from: start, to })) }
+    /**
+     * Dos consultas, dos `await` secuenciales y no un `Promise.all`.
+     *
+     * `node:sqlite` es SINCRONO: `DatabaseSync.prepare().all()` bloquea y devuelve filas, no una
+     * promesa. Un `Promise.all` aqui no solaparia nada —la primera termina antes de que exista la
+     * segunda— y solo pondria una forma que promete concurrencia donde no la hay.
+     */
+    const done = await tasks.doneStats(userId, { from: start, to })
+    const planned = await tasks.plannedByDay(userId, { from: start, to })
+
+    return { from: start, to, ...foldStats(done, planned) }
   }

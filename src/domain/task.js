@@ -57,6 +57,19 @@ export function makeTask(input = {}, base = {}) {
     fields.dueAt = 'Usa una fecha ISO con zona, ej 2026-07-30T18:00:00-06:00'
   }
 
+  /**
+   * El espacio de trabajo, opcional. null lo saca del espacio sin borrar la tarea.
+   *
+   * Solo se valida la FORMA aqui: que el espacio exista y sea de esta persona lo garantiza la clave
+   * ajena, y comprobarlo en el dominio obligaria a este modulo a hacer I/O. Un id de otra cuenta
+   * revienta con un error de FK, que es un 500 feo pero no una fuga: la fila no se escribe.
+   */
+  const workspaceId =
+    merged.workspaceId == null || merged.workspaceId === '' ? null : Number(merged.workspaceId)
+  if (workspaceId !== null && !(Number.isInteger(workspaceId) && workspaceId > 0)) {
+    fields.workspaceId = 'Espacio no valido'
+  }
+
   const task = {
     title,
     notes: notes || null,
@@ -64,6 +77,7 @@ export function makeTask(input = {}, base = {}) {
     minutes,
     status: pick('status', TASK_STATUS, 'pending'),
     focusArea,
+    workspaceId,
     dueAt,
     // La fecha local viene dentro del ISO que manda el cliente: filtrar "hoy" es comparar
     // texto y no adivinar zonas horarias en el servidor.
@@ -81,6 +95,9 @@ export const toPublicTask = (row) => ({
   size: row.size,
   status: row.status,
   focusArea: row.focusArea,
+  workspaceId: row.workspaceId ?? null,
+  /** Orden manual dentro del dia. null = nunca se reordeno; lo escribe solo PATCH /tasks/order. */
+  position: row.position ?? null,
   dueAt: row.dueAt,
   dueDate: row.dueDate,
   /** Lo que la persona puso; si no puso nada, lo que sugiere el tamaño. */
