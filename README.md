@@ -7,7 +7,7 @@ cp .env.example .env
 node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))'  # pega esto en JWT_SECRET
 npm install
 npm run dev     # recarga al guardar
-npm test        # 92 tests
+npm test        # 111 tests
 ```
 
 Al arrancar imprime la IP de LAN. Esa es la que usa el celular; `localhost` solo funciona en el simulador.
@@ -60,8 +60,14 @@ El token sigue firmado hasta que venza y no hay lista negra: no abre nada porque
 `user_id` sobre una fila que ya no existe.
 
 Solo `email`, `password` y `name` son obligatorios al registrar. El resto del perfil
-(`birthDate`, `focusAreas`, `peakEnergy`, `reminderStyle`, `reminderHour`, `accentColor`)
+(`birthDate`, `focusAreas`, `peakEnergy`, `reminderStyle`, `reminderHour`, `accentColor`, `avatar`)
 cae en defaults para que el onboarding se pueda saltar.
+
+`avatar` es el identificador del memoji (`memoji-07`), no un archivo ni una URL: las imágenes viven
+en el bundle de la app. `null` significa "no eligió" y la app pinta la inicial del nombre. Se valida
+contra el patrón `/^memoji-\d{2}$/` y **no** contra un catálogo, por eso tampoco sale en
+`/auth/catalogs`: el set de caras vive del lado del cliente y crece con cada release de la app, así
+que una lista aquí no validaría nada real — solo acoplaría cada release a un deploy de este lado.
 
 ## Tareas
 
@@ -88,6 +94,7 @@ cae en defaults para que el onboarding se pueda saltar.
 | `GET` | `/me` | perfil |
 | `GET` | `/me/today` | `?date=YYYY-MM-DD` — todo el día en una llamada |
 | `GET` | `/me/streak` | `?date=YYYY-MM-DD` — racha, mejor marca y el punteo de la semana |
+| `GET` | `/me/tasks/summary` | `{ counts: { total, pending, done } }` de toda la cuenta |
 | `POST` | `/me/devices` | `{ token, platform }` guarda el Expo push token |
 
 `/me/today` devuelve `{ date, user, counts, next, running, tasks }`: exactamente lo que
@@ -96,6 +103,12 @@ necesitan el widget de iOS, el de Android y la Live Activity, sin encadenar peti
 `/me/streak` devuelve `{ date, days, best, week }`, con `week` de lunes a domingo y un `done` por día.
 Va aparte de `/today` porque son dos preguntas distintas: el widget de racha no necesita las tareas
 del día ni al contrario, y juntarlas obligaría a la mitad de los widgets a traerse datos que no usan.
+
+`/me/tasks/summary` es de por vida a propósito, y por eso no lo cubre `/me/stats`: ese mira una
+ventana de 28 días y solo tareas con fecha, así que su `totals.done` **encoge con el tiempo** y no
+cuenta lo que nunca se agendó. Sirve para una gráfica de progreso, no para el contador de un perfil.
+Tampoco es una columna contador: se deriva de la tabla con un `GROUP BY status`, igual que `stage`
+se deriva de sus dos fechas.
 
 Dos decisiones de la racha, las dos en `domain/streak.js`:
 

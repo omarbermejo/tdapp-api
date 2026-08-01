@@ -31,6 +31,21 @@ export function createTaskRepository(db) {
     title = ?, notes = ?, size = ?, minutes = ?, status = ?, focus_area = ?,
     due_at = ?, due_date = ?, completed_at = ?
     WHERE user_id = ? AND id = ?`)
+  /**
+   * Cuantas tareas tiene la cuenta por estado, de toda su historia.
+   *
+   * Sin ventana de fechas y sin `due_date IS NOT NULL`, al reves que doneStats: esto alimenta la
+   * tarjeta del perfil, que cuenta una vida entera y no cuatro semanas. Con los filtros de
+   * doneStats el numero ENCOGERIA con el tiempo — cierras doscientas cosas en el año y la tarjeta
+   * dice doce — y las tareas que nunca se agendaron no existirian nunca.
+   *
+   * Barato aunque no tenga indice propio: `tasks_user_date` empieza por user_id, asi que el motor
+   * lo usa para quedarse solo con las filas de esta persona.
+   *
+   * Devuelve filas crudas: la equivalencia estado -> llave la resuelve el caso de uso con
+   * TASK_STATUS. SQL tonto, dominio en el dominio.
+   */
+  const counts = db.prepare('SELECT status, COUNT(*) AS n FROM tasks WHERE user_id = ? GROUP BY status')
 
   return {
     async create(userId, task) {
@@ -91,6 +106,10 @@ export function createTaskRepository(db) {
             AND due_date <= ?
           GROUP BY due_date, focus_area, size, minutes`)
         .all(userId, from, to)
+    },
+
+    async countByStatus(userId) {
+      return counts.all(userId)
     },
 
     /**

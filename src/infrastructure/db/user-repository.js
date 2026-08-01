@@ -17,6 +17,7 @@ const toDomain = (row) =>
     reminderStyle: row.reminder_style,
     reminderHour: row.reminder_hour,
     accentColor: row.accent_color,
+    avatar: row.avatar,
     onboardedAt: row.onboarded_at,
   }
 
@@ -24,7 +25,7 @@ const toDomain = (row) =>
 const SELECT = `SELECT u.id, u.email, u.name, u.password_hash, u.auth_provider,
                        u.email_verified_at, u.created_at,
                        p.birth_date, p.focus_areas, p.peak_energy,
-                       p.reminder_style, p.reminder_hour, p.accent_color, p.onboarded_at
+                       p.reminder_style, p.reminder_hour, p.accent_color, p.avatar, p.onboarded_at
                   FROM users u
                   LEFT JOIN user_profiles p ON p.user_id = u.id`
 
@@ -33,7 +34,7 @@ const SELECT = `SELECT u.id, u.email, u.name, u.password_hash, u.auth_provider,
  * placeholders y el SET del upsert, asi que agregar una columna es tocar estas dos cosas
  * pegadas y no cuatro SQL sueltos donde olvidar una borra el dato sin error.
  */
-const PROFILE_COLUMNS = ['birth_date', 'focus_areas', 'peak_energy', 'reminder_style', 'reminder_hour', 'accent_color']
+const PROFILE_COLUMNS = ['birth_date', 'focus_areas', 'peak_energy', 'reminder_style', 'reminder_hour', 'accent_color', 'avatar']
 
 const profileValues = (profile) => [
   profile.birthDate,
@@ -42,6 +43,9 @@ const profileValues = (profile) => [
   profile.reminderStyle,
   profile.reminderHour,
   profile.accentColor,
+  // El ?? no es adorno: node:sqlite no liga undefined, y un perfil armado a mano sin la llave
+  // reventaria el run() en vez de guardar el null que significa "sin cara".
+  profile.avatar ?? null,
 ]
 
 const COLUMNS = PROFILE_COLUMNS.join(', ')

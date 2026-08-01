@@ -259,3 +259,46 @@ test('PATCH /me/profile valida, mergea y sella onboarded_at una sola vez', async
   assert.deepEqual(merged.focusAreas, ['work'])
   assert.equal(merged.onboardedAt, saved.onboardedAt)
 })
+
+test('el avatar guarda el memoji, lo borra con null y sobrevive a un parche de otro campo', async () => {
+  const token = await verifiedToken('avatar@nexgen.mx')
+
+  // Nace sin avatar: null es "no eligio cara", y la app pinta la inicial del nombre.
+  const nuevo = await call(url, 'GET', '/me', { token })
+  assert.equal((await nuevo.json()).user.avatar, null)
+
+  for (const avatar of [
+    'memoji-7', // sin padding: la app siempre manda dos digitos
+    'memoji-007',
+    'Memoji-07', // el nombre del archivo va en minusculas
+    'memoji_07',
+    '../assets/memoji-07', // el identificador nunca es una ruta
+    'https://x/memoji-07.webp',
+    'memoji-07.webp', // la extension es cosa del bundle, no del dato
+    'memoji-ab',
+    7,
+    ['memoji-07'],
+    '',
+  ]) {
+    const res = await call(url, 'PATCH', '/me/profile', { token, body: { avatar } })
+    assert.equal(res.status, 400, `${JSON.stringify(avatar)} deberia rechazarse`)
+    assert.ok((await res.json()).fields.avatar, 'el error va en fields.avatar')
+  }
+
+  const ok = await call(url, 'PATCH', '/me/profile', { token, body: { avatar: 'memoji-07' } })
+  assert.equal((await ok.json()).user.avatar, 'memoji-07')
+
+  // Un memoji que esta version de la app todavia no trae entra igual: el catalogo vive en el bundle
+  // del cliente y este lado no puede saberlo. Este assert ES la decision de validar por patron.
+  const futuro = await call(url, 'PATCH', '/me/profile', { token, body: { avatar: 'memoji-45' } })
+  assert.equal((await futuro.json()).user.avatar, 'memoji-45')
+
+  // Un parche de otro campo no lo mueve, y persiste en una lectura nueva.
+  await call(url, 'PATCH', '/me/profile', { token, body: { accentColor: 'clay' } })
+  const me = await call(url, 'GET', '/me', { token })
+  assert.equal((await me.json()).user.avatar, 'memoji-45', 'el avatar persiste entre peticiones')
+
+  // null lo borra: volver a la inicial es una eleccion tan valida como elegir cara.
+  const borrado = await call(url, 'PATCH', '/me/profile', { token, body: { avatar: null } })
+  assert.equal((await borrado.json()).user.avatar, null)
+})

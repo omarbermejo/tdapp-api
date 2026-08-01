@@ -52,6 +52,15 @@ export function createMeRouter({ useCases, tokens }) {
     res.json(await useCases.getStats(req.userId, req.query))
   })
 
+  /**
+   * El resumen de la tarjeta del perfil. Aparte de /stats porque no es la misma pregunta: /stats
+   * mira una ventana de cuatro semanas y solo tareas con fecha, esto mira la vida entera de la
+   * cuenta. Un contador de perfil que encoge con el tiempo no es un contador.
+   */
+  router.get('/tasks/summary', async (req, res) => {
+    res.json(await useCases.getTaskCounts(req.userId))
+  })
+
   router.patch('/profile', async (req, res) => {
     res.json(await useCases.updateProfile(req.userId, req.body ?? {}))
   })

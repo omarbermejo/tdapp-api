@@ -6,6 +6,7 @@ import { forgotPassword } from './application/forgot-password.js'
 import { getProfile } from './application/get-profile.js'
 import { getStats } from './application/get-stats.js'
 import { getStreak } from './application/get-streak.js'
+import { getTaskCounts } from './application/get-task-counts.js'
 import { getToday } from './application/get-today.js'
 import { listTasks } from './application/list-tasks.js'
 import { loginUser } from './application/login-user.js'
@@ -83,6 +84,7 @@ export function buildApp(overrides = {}) {
     getToday: getToday(deps),
     getStreak: getStreak(deps),
     getStats: getStats(deps),
+    getTaskCounts: getTaskCounts(deps),
     registerDevice: registerDevice(deps),
   }
 

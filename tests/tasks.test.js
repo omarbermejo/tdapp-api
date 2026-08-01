@@ -230,3 +230,39 @@ test('/tasks/catalogs es publico para pintar las opciones', async () => {
   assert.equal(catalogs.sizeMinutes.deep, 50)
   assert.ok(catalogs.focusArea.includes('creativity'))
 })
+
+test('/me/tasks/summary cuenta toda la historia, no una ventana', async () => {
+  // Usuario nuevo: los conteos son de por vida, asi que sobre `auth` dependerian de todo lo
+  // anterior de este archivo.
+  const token = await signUp('resumen@nexgen.mx', 'Resumen')
+  const summary = async () => (await (await call('GET', '/me/tasks/summary', { token })).json()).counts
+
+  assert.deepEqual(await summary(), { total: 0, pending: 0, done: 0 }, 'cuenta nueva en ceros')
+
+  // Una sin agendar y una vencida hace anos: las dos las pierde /me/stats (filtra due_date IS NOT
+  // NULL y una ventana de 28 dias) y son justo las que esta tarjeta no puede perder.
+  const suelta = (await (await newTask({ title: 'Sin fecha' }, token)).json()).task
+  const vieja = (await (await newTask({ title: 'Vieja', dueAt: '2020-01-01T12:00:00-06:00' }, token)).json()).task
+  await newTask({ title: 'Pendiente', dueAt: '2026-08-01T18:00:00-06:00' }, token)
+
+  await call('PATCH', `/tasks/${suelta.id}`, { body: { status: 'done' }, token })
+  await call('PATCH', `/tasks/${vieja.id}`, { body: { status: 'done' }, token })
+
+  assert.deepEqual(await summary(), { total: 3, pending: 1, done: 2 })
+
+  // Reabrir mueve el conteo en los dos sentidos: se deriva de la tabla, no se acumula.
+  await call('PATCH', `/tasks/${vieja.id}`, { body: { status: 'pending' }, token })
+  assert.deepEqual(await summary(), { total: 3, pending: 2, done: 1 })
+
+  await call('DELETE', `/tasks/${suelta.id}`, { token })
+  assert.deepEqual(await summary(), { total: 2, pending: 2, done: 0 })
+
+  // No se cuelan las tareas de nadie mas.
+  const ajeno = (await (await call('GET', '/me/tasks/summary', { token: otherAuth })).json()).counts
+  const suyas = (await (await call('GET', '/tasks', { token: otherAuth })).json()).tasks
+  assert.equal(ajeno.total, suyas.length)
+})
+
+test('/me/tasks/summary exige token', async () => {
+  assert.equal((await call('GET', '/me/tasks/summary')).status, 401)
+})

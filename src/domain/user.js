@@ -17,6 +17,28 @@ export const ACCENT_COLOR = ['forest', 'olive', 'leaf', 'clay', 'copper']
  */
 export const AUTH_PROVIDERS = ['password', 'google', 'apple', 'oauth']
 
+/**
+ * El avatar no es un catalogo: es un PATRON.
+ *
+ * Los memojis son archivos del bundle de la app (`assets/avatars/memoji-NN.webp`) y aqui no hay
+ * ninguno, asi que una lista enumerada no validaria nada real — solo repetiria una lista que este
+ * lado no puede comprobar, y que crece cada vez que se vuelve a cortar la lamina de Figma. Con
+ * nombres cerrados, el dia que la app publique memoji-46 quien lo elija recibe un 400 hasta que se
+ * deployee el API: un release de la app acoplado a un deploy del backend por un dato cosmetico.
+ *
+ * El patron da lo unico que un catalogo cerrado daria de verdad: forma acotada, alfabeto cerrado y
+ * un 400 con nombre de campo para la basura. Un nombre valido que la app todavia no tenga cae en el
+ * mismo fallback que el null (la inicial del nombre), que la app necesita implementar igual para
+ * las versiones viejas.
+ *
+ * Por eso tampoco sale en `catalogs`: la app ya genera la lista sola desde sus propios require, y
+ * dos fuentes de verdad aqui es drift garantizado — con la de este lado siempre en el equivocado.
+ *
+ * ponytail: \d{2} topa en memoji-99. Pasar de ahi cambia tambien el esquema de nombres de la app,
+ * asi que los dos lados se enteran a la vez.
+ */
+const AVATAR = /^memoji-\d{2}$/
+
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 const MIN_PASSWORD = 8
 const MAX_FOCUS = 3
@@ -62,6 +84,8 @@ export const DEFAULT_PROFILE = Object.freeze({
   // cuando mas sirve: el dia todavia se puede acomodar.
   reminderHour: 9,
   accentColor: 'olive',
+  // null no es un hueco: es "no eligio cara", y la app pinta la inicial del nombre.
+  avatar: null,
 })
 
 /**
@@ -142,6 +166,19 @@ export function createProfile(input = {}, current = DEFAULT_PROFILE) {
     }
   }
 
+  /**
+   * null lo borra (vuelve a la inicial) y no mandarlo no lo toca, igual que birthDate y al reves
+   * que reminderHour, donde null no borra porque sin hora no hay recordatorio. No pasa por `pick`
+   * a proposito: `pick` trata '' como "no tocar" y aqui quitarse la cara es una eleccion tan valida
+   * como ponersela. `str` devuelve '' para lo que no es texto, asi que numeros, arrays y objetos
+   * caen solos contra el patron.
+   */
+  let avatar = current.avatar
+  if (has('avatar')) {
+    avatar = input.avatar == null ? null : str(input.avatar)
+    if (avatar !== null && !AVATAR.test(avatar)) fields.avatar = 'Elige un avatar de la lista'
+  }
+
   const profile = {
     birthDate,
     focusAreas,
@@ -149,6 +186,7 @@ export function createProfile(input = {}, current = DEFAULT_PROFILE) {
     reminderStyle: pick('reminderStyle', REMINDER_STYLE),
     reminderHour,
     accentColor: pick('accentColor', ACCENT_COLOR),
+    avatar,
   }
 
   if (Object.keys(fields).length) throw ValidationError(fields)
@@ -190,6 +228,10 @@ export const toPublicUser = (row) => ({
   // Si un rename futuro deja un valor fuera del catalogo, sale el default en vez de un
   // nombre que la app no sabe pintar. Los ya guardados los arregla su migracion.
   accentColor: ACCENT_COLOR.includes(row.accentColor) ? row.accentColor : DEFAULT_PROFILE.accentColor,
+  // Sin filtrar contra una lista, al reves que accentColor: aqui el catalogo vive en el bundle de
+  // la app y este lado no puede saber cual es. Un nombre que esa version no tenga lo resuelve ella
+  // con el mismo fallback que usa para null. Ver el docblock de AVATAR.
+  avatar: row.avatar ?? DEFAULT_PROFILE.avatar,
   emailVerified: !!row.emailVerifiedAt,
   onboardedAt: row.onboardedAt ?? null,
   authProvider: row.authProvider ?? 'password',
