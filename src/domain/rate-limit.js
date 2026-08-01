@@ -30,6 +30,20 @@ export const LOGIN_POLICY = { tries: 8, windowMs: 10 * 60_000 }
 export const FORGOT_POLICY = { tries: 5, windowMs: 15 * 60_000 }
 
 /**
+ * Diez intentos de codigo de invitacion cada diez minutos.
+ *
+ * Mas holgado que el login (8) a proposito: seis caracteres dictados por telefono se teclean mal dos
+ * veces sin que pase nada raro, y quien se equivoca aqui no esta atacando nada.
+ *
+ * Y mas estricto de lo que parece, porque cuenta LAS DOS PUERTAS JUNTAS: la vista previa y el aceptar
+ * suben el mismo contador. Con un contador propio, la vista previa seria un oraculo gratis — se podrian
+ * enumerar codigos sin gastar ni un intento del que de verdad importa.
+ *
+ * Sobre mil millones de combinaciones, diez intentos cada diez minutos son 1e-8 de acertar por ventana.
+ */
+export const JOIN_POLICY = { tries: 10, windowMs: 10 * 60_000 }
+
+/**
  * Techo de claves vigiladas.
  *
  * Sin el, el propio limitador es el agujero: un atacante rotando IPs mete una entrada nueva por intento

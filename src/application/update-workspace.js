@@ -8,7 +8,10 @@ import { makeWorkspace, toPublicWorkspace } from '../domain/workspace.js'
 export const updateWorkspace =
   ({ workspaces }) =>
   async (userId, id, patch = {}) => {
-    const current = await workspaces.findById(userId, id)
+    // `findOwned` y no `findById`: administrar es del dueño. Un miembro trabaja en el espacio, pero
+    // no lo renombra ni lo recolorea — la clasificacion manda el icono y el color de TODAS sus tareas
+    // para todo el mundo, y eso no puede cambiarlo quien acaba de entrar.
+    const current = await workspaces.findOwned(userId, id)
     if (!current) throw NotFoundError('Ese espacio no existe')
 
     const saved = await workspaces.update(userId, id, makeWorkspace(patch, current))

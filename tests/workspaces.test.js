@@ -305,3 +305,347 @@ test('/me/stats con un espacio ajeno devuelve ceros, no un 404', async () => {
   assert.equal(res.status, 200)
   assert.equal((await res.json()).totals.done, 0)
 })
+
+// --- la frontera: espacios compartidos -----------------------------------------------------------
+
+/**
+ * Mete a alguien en un espacio escribiendo la fila a mano.
+ *
+ * Los endpoints de invitacion todavia no existen, y este archivo prueba la FRONTERA, no el camino para
+ * llegar a ella. Se abre una segunda conexion al mismo fichero: con WAL encendido conviven sin
+ * bloquearse, y es la unica forma de montar el escenario sin depender del paso siguiente.
+ */
+const joinAsMember = async (workspaceId, userId) => {
+  const { DatabaseSync } = await import('node:sqlite')
+  const db = new DatabaseSync(DB)
+  db.exec('PRAGMA foreign_keys = ON')
+  db.prepare('INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)').run(
+    workspaceId,
+    userId,
+    'member'
+  )
+  db.close()
+}
+
+/** El id de la cuenta detras de un token, para poder meterla en un espacio. */
+const idOf = async (token) => (await (await call('GET', '/me', { token })).json()).user.id
+
+test('el dueño de un espacio nuevo nace como miembro suyo', async () => {
+  const { workspace } = await (
+    await call('POST', '/workspaces', { body: { name: 'Con dueño', icon: 'work' }, token: auth })
+  ).json()
+  // Si la fila de membresia no se escribiera, el espacio seria invisible para su propio dueño:
+  // listWithCounts pregunta por workspace_members, no por user_id.
+  const [, body] = await json(await call('GET', '/workspaces', { token: auth }))
+  assert.ok(body.workspaces.some((w) => w.id === workspace.id))
+})
+
+test('un MIEMBRO ve las tareas del espacio, y antes de entrar no', async () => {
+  const ana = await signUp('frontera-ana@nexgen.mx', 'Ana')
+  const { workspace } = await (
+    await call('POST', '/workspaces', { body: { name: 'Compartido', icon: 'work' }, token: auth })
+  ).json()
+  await call('POST', '/tasks', {
+    body: { title: 'De Omar', workspaceId: workspace.id, dueAt: '2026-09-20T12:00:00-06:00' },
+    token: auth,
+  })
+
+  // Antes de entrar: el espacio no existe para ella.
+  const antes = await call('GET', `/tasks?workspaceId=${workspace.id}`, { token: ana })
+  assert.deepEqual((await antes.json()).tasks, [], 'sin membresia no ve nada')
+
+  await joinAsMember(workspace.id, await idOf(ana))
+
+  const despues = await call('GET', `/tasks?workspaceId=${workspace.id}`, { token: ana })
+  const titles = (await despues.json()).tasks.map((t) => t.title)
+  assert.deepEqual(titles, ['De Omar'], 'como miembro ve el trabajo del espacio')
+})
+
+test('un miembro CIERRA una tarea ajena y el merito es SUYO', async () => {
+  const ana = await signUp('frontera-cierra@nexgen.mx', 'Ana')
+  const anaId = await idOf(ana)
+  const { workspace } = await (
+    await call('POST', '/workspaces', { body: { name: 'Merito', icon: 'work' }, token: auth })
+  ).json()
+  await joinAsMember(workspace.id, anaId)
+
+  const { task } = await (
+    await call('POST', '/tasks', {
+      body: { title: 'La cierra Ana', workspaceId: workspace.id, dueAt: '2026-09-21T12:00:00-06:00' },
+      token: auth,
+    })
+  ).json()
+
+  const res = await call('PATCH', `/tasks/${task.id}`, { body: { status: 'done' }, token: ana })
+  assert.equal(res.status, 200, 'un miembro puede cerrarla aunque no sea suya')
+  const { task: cerrada } = await res.json()
+  assert.equal(cerrada.status, 'done')
+  assert.equal(cerrada.completedBy, anaId, 'el merito es de quien cerro, no del dueño')
+})
+
+test('reabrir y volver a cerrar no le quita el merito a quien la cerro primero', async () => {
+  const ana = await signUp('frontera-reabre@nexgen.mx', 'Ana')
+  const anaId = await idOf(ana)
+  const { workspace } = await (
+    await call('POST', '/workspaces', { body: { name: 'Reabre', icon: 'work' }, token: auth })
+  ).json()
+  await joinAsMember(workspace.id, anaId)
+  const { task } = await (
+    await call('POST', '/tasks', { body: { title: 'Ida y vuelta', workspaceId: workspace.id }, token: auth })
+  ).json()
+
+  await call('PATCH', `/tasks/${task.id}`, { body: { status: 'done' }, token: ana })
+  await call('PATCH', `/tasks/${task.id}`, { body: { status: 'pending' }, token: auth })
+  const reabierta = await (await call('GET', `/tasks?workspaceId=${workspace.id}`, { token: auth })).json()
+  assert.equal(reabierta.tasks[0].completedBy, null, 'reabrir borra el merito, como borra la hora')
+
+  await call('PATCH', `/tasks/${task.id}`, { body: { status: 'done' }, token: auth })
+  const otra = await (await call('GET', `/tasks?workspaceId=${workspace.id}`, { token: auth })).json()
+  assert.equal(otra.tasks[0].completedBy, await idOf(auth), 'la cierra Omar, el merito es de Omar')
+})
+
+test('un miembro TRABAJA pero no ADMINISTRA', async () => {
+  const ana = await signUp('frontera-permisos@nexgen.mx', 'Ana')
+  const { workspace } = await (
+    await call('POST', '/workspaces', { body: { name: 'Permisos', icon: 'work' }, token: auth })
+  ).json()
+  await joinAsMember(workspace.id, await idOf(ana))
+
+  // Trabajar: si.
+  const crea = await call('POST', '/tasks', {
+    body: { title: 'Aporte de Ana', workspaceId: workspace.id },
+    token: ana,
+  })
+  assert.equal(crea.status, 201, 'un miembro mete tareas en el espacio')
+
+  // Administrar: no. Mismo 404 que un espacio inexistente, para no delatar que existe.
+  assert.equal(
+    (await call('PATCH', `/workspaces/${workspace.id}`, { body: { name: 'Mio' }, token: ana })).status,
+    404
+  )
+  assert.equal((await call('DELETE', `/workspaces/${workspace.id}`, { token: ana })).status, 404)
+})
+
+test('nadie mete ni MUEVE una tarea a un espacio del que no es miembro', async () => {
+  const ana = await signUp('frontera-ajeno@nexgen.mx', 'Ana')
+  const { workspace } = await (
+    await call('POST', '/workspaces', { body: { name: 'Cerrado', icon: 'work' }, token: auth })
+  ).json()
+
+  const crear = await call('POST', '/tasks', {
+    body: { title: 'Colada', workspaceId: workspace.id },
+    token: ana,
+  })
+  assert.equal(crear.status, 400)
+  assert.ok((await crear.json()).fields.workspaceId)
+
+  // Y moverla despues es la misma puerta.
+  const { task } = await (await call('POST', '/tasks', { body: { title: 'Suya' }, token: ana })).json()
+  const mover = await call('PATCH', `/tasks/${task.id}`, {
+    body: { workspaceId: workspace.id },
+    token: ana,
+  })
+  assert.equal(mover.status, 400)
+})
+
+test('el anillo de un espacio compartido cuenta el trabajo de TODOS', async () => {
+  const ana = await signUp('frontera-anillo@nexgen.mx', 'Ana')
+  const { workspace } = await (
+    await call('POST', '/workspaces', { body: { name: 'Anillo', icon: 'work' }, token: auth })
+  ).json()
+  await joinAsMember(workspace.id, await idOf(ana))
+
+  await call('POST', '/tasks', { body: { title: 'De Omar', workspaceId: workspace.id }, token: auth })
+  await call('POST', '/tasks', { body: { title: 'De Ana', workspaceId: workspace.id }, token: ana })
+
+  const [, body] = await json(await call('GET', `/workspaces/${workspace.id}`, { token: auth }))
+  assert.equal(body.workspace.total, 2, 'con el filtro viejo por dueño esto habria dado 1')
+})
+
+test('el modo general NO cambia: Omar no ve las tareas de Ana en su dia', async () => {
+  // Es la decision que deja en paz al widget, a la Live Activity y a la racha.
+  const ana = await signUp('frontera-general@nexgen.mx', 'Ana')
+  const { workspace } = await (
+    await call('POST', '/workspaces', { body: { name: 'General', icon: 'work' }, token: auth })
+  ).json()
+  await joinAsMember(workspace.id, await idOf(ana))
+  await call('POST', '/tasks', {
+    body: { title: 'De Ana, en el espacio', workspaceId: workspace.id, dueAt: '2026-09-22T12:00:00-06:00' },
+    token: ana,
+  })
+
+  const dia = await (await call('GET', '/me/today?date=2026-09-22', { token: auth })).json()
+  assert.ok(
+    !dia.tasks.some((t) => t.title === 'De Ana, en el espacio'),
+    'sin espacio activo, el dia de Omar sigue siendo solo suyo'
+  )
+})
+
+test('dos personas cronometran a la vez en el mismo espacio, sin pisarse', async () => {
+  const ana = await signUp('timer-ana@nexgen.mx', 'Ana')
+  const { workspace } = await (
+    await call('POST', '/workspaces', { body: { name: 'Relojes', icon: 'work' }, token: auth })
+  ).json()
+  await joinAsMember(workspace.id, await idOf(ana))
+
+  const mk = async (title) =>
+    (await (await call('POST', '/tasks', { body: { title, workspaceId: workspace.id }, token: auth })).json())
+      .task
+
+  const deOmar = await mk('La cronometra Omar')
+  const deAna = await mk('La cronometra Ana')
+
+  // Con el esquema viejo esto era imposible: el indice unico estaba keyeado por el DUEÑO de la fila,
+  // asi que el reloj de Ana ocupaba la ranura de Omar y el segundo start daba 409.
+  assert.equal(
+    (await call('POST', `/tasks/${deOmar.id}/timer`, { body: { action: 'start' }, token: auth })).status,
+    200
+  )
+  assert.equal(
+    (await call('POST', `/tasks/${deAna.id}/timer`, { body: { action: 'start' }, token: ana })).status,
+    200,
+    'Ana arranca el suyo aunque Omar tenga uno corriendo'
+  )
+
+  // Y cada quien ve SU reloj: la misma tarea sale corriendo para uno y parada para el otro.
+  const vistaDeOmar = await (await call('GET', `/tasks?workspaceId=${workspace.id}`, { token: auth })).json()
+  const vistaDeAna = await (await call('GET', `/tasks?workspaceId=${workspace.id}`, { token: ana })).json()
+  assert.equal(vistaDeOmar.tasks.find((t) => t.id === deOmar.id).running, true)
+  assert.equal(vistaDeAna.tasks.find((t) => t.id === deOmar.id).running, false, 'el reloj de Omar no es de Ana')
+  assert.equal(vistaDeAna.tasks.find((t) => t.id === deAna.id).running, true)
+
+  // Pero cada quien sigue topado a UNO: el indice se movio, no desaparecio.
+  assert.equal(
+    (await call('POST', `/tasks/${deAna.id}/timer`, { body: { action: 'start' }, token: auth })).status,
+    409,
+    'Omar ya tiene uno corriendo'
+  )
+})
+
+// --- espacio activo y clasificacion ---------------------------------------------------------------
+
+test('activar un espacio lo devuelve resuelto en el perfil', async () => {
+  const { workspace } = await (
+    await call('POST', '/workspaces', {
+      body: { name: 'Activo', icon: 'academic', accent: 'olive', tag: 'study' },
+      token: auth,
+    })
+  ).json()
+  assert.equal(workspace.tag, 'study')
+
+  const [status, body] = await json(
+    await call('PATCH', '/me/profile', { body: { activeWorkspaceId: workspace.id }, token: auth })
+  )
+  assert.equal(status, 200)
+  // Sale el OBJETO y no solo el id: la pastilla se pinta en el primer frame, sin segunda peticion.
+  assert.deepEqual(body.user.activeWorkspace, {
+    id: workspace.id,
+    name: 'Activo',
+    icon: 'academic',
+    accent: 'olive',
+    tag: 'study',
+  })
+})
+
+test('un PATCH de OTRO campo no te saca del espacio', async () => {
+  // La trampa del gate: `active_workspace_id` esta en PROFILE_COLUMNS, que genera el SET del upsert.
+  // Sin conservar el valor actual, cambiar el color te devolveria al modo general.
+  const { workspace } = await (
+    await call('POST', '/workspaces', { body: { name: 'Persiste', icon: 'work' }, token: auth })
+  ).json()
+  await call('PATCH', '/me/profile', { body: { activeWorkspaceId: workspace.id }, token: auth })
+
+  const [, body] = await json(
+    await call('PATCH', '/me/profile', { body: { accentColor: 'copper' }, token: auth })
+  )
+  assert.equal(body.user.accentColor, 'copper')
+  assert.equal(body.user.activeWorkspace?.id, workspace.id, 'el espacio activo sobrevive')
+})
+
+test('null vuelve al modo general, y un espacio ajeno se rechaza', async () => {
+  const otra = await signUp('activo-otro@nexgen.mx', 'Ana')
+  const { workspace } = await (
+    await call('POST', '/workspaces', { body: { name: 'Solo mio', icon: 'work' }, token: auth })
+  ).json()
+
+  const ajeno = await call('PATCH', '/me/profile', {
+    body: { activeWorkspaceId: workspace.id },
+    token: otra,
+  })
+  assert.equal(ajeno.status, 400)
+
+  await call('PATCH', '/me/profile', { body: { activeWorkspaceId: workspace.id }, token: auth })
+  const [, body] = await json(
+    await call('PATCH', '/me/profile', { body: { activeWorkspaceId: null }, token: auth })
+  )
+  assert.equal(body.user.activeWorkspace, null)
+})
+
+test('borrar el espacio activo devuelve sola a la persona al modo general', async () => {
+  // Es el ON DELETE SET NULL: la reconciliacion entera, sin una linea de codigo que mantener.
+  const { workspace } = await (
+    await call('POST', '/workspaces', { body: { name: 'Efimero activo', icon: 'work' }, token: auth })
+  ).json()
+  await call('PATCH', '/me/profile', { body: { activeWorkspaceId: workspace.id }, token: auth })
+  await call('DELETE', `/workspaces/${workspace.id}`, { token: auth })
+
+  const [, body] = await json(await call('GET', '/me', { token: auth }))
+  assert.equal(body.user.activeWorkspace, null)
+})
+
+test('la tarea HEREDA la clasificacion de su espacio, y su foco propio la sobreescribe', async () => {
+  const { workspace } = await (
+    await call('POST', '/workspaces', {
+      body: { name: 'Con etiqueta', icon: 'graph-up', tag: 'business' },
+      token: auth,
+    })
+  ).json()
+
+  const hereda = await (
+    await call('POST', '/tasks', {
+      body: { title: 'Sin foco propio', workspaceId: workspace.id, dueAt: '2026-10-01T12:00:00-06:00' },
+      token: auth,
+    })
+  ).json()
+  assert.equal(hereda.task.workspaceTag, 'business')
+  assert.equal(hereda.task.focusArea, null, 'la tarea no gana un foco: lo hereda al pintarse')
+
+  const propio = await (
+    await call('POST', '/tasks', {
+      body: { title: 'Con foco', workspaceId: workspace.id, focusArea: 'health' },
+      token: auth,
+    })
+  ).json()
+  assert.equal(propio.task.focusArea, 'health', 'el override manda')
+  assert.equal(propio.task.workspaceTag, 'business')
+})
+
+test('las 10 clasificaciones contienen los 7 focos: ensanchar no rompe nada', async () => {
+  const [, cat] = await json(await call('GET', '/workspaces/catalogs'))
+  const [, focos] = await json(await call('GET', '/auth/catalogs'))
+  for (const foco of focos.focusAreas) {
+    assert.ok(cat.tag.includes(foco), `${foco} sigue siendo una clasificacion valida`)
+  }
+  assert.equal(cat.tag.length, 10)
+  assert.ok(['fitness', 'event', 'business'].every((t) => cat.tag.includes(t)))
+})
+
+test('una clasificacion inventada se rechaza, y un espacio sin ella es valido', async () => {
+  const malo = await call('POST', '/workspaces', {
+    body: { name: 'Raro', tag: 'no-existe' },
+    token: auth,
+  })
+  assert.equal(malo.status, 400)
+
+  const [status, body] = await json(
+    await call('POST', '/workspaces', { body: { name: 'Sin clasificar' }, token: auth })
+  )
+  assert.equal(status, 201)
+  assert.equal(body.workspace.tag, null, 'sin clasificar es un estado legitimo')
+
+  // Y editarlo por otra cosa NO le inventa una: makeWorkspace valida el merge.
+  const [, tras] = await json(
+    await call('PATCH', `/workspaces/${body.workspace.id}`, { body: { name: 'Otro nombre' }, token: auth })
+  )
+  assert.equal(tras.workspace.tag, null)
+})

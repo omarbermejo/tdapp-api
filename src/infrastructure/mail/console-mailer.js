@@ -15,4 +15,12 @@ export const createConsoleMailer = () => ({
       `RESEND_API_KEY vacio: el codigo NO se envio por correo.\n  para: ${to}\n  codigo: ${code} (${purpose}, vence en ${minutes} min)`
     )
   },
+
+  // El gemelo de `sendInvite` del mailer de verdad. Sin el, en dev sin RESEND_API_KEY invitar
+  // revienta con "mailer.sendInvite is not a function".
+  async sendInvite({ to, code, days, workspace }) {
+    console.warn(
+      `RESEND_API_KEY vacio: la invitacion NO se envio por correo.\n  para: ${to}\n  espacio: ${workspace}\n  codigo: ${code} (vence en ${days} dias)`
+    )
+  },
 })

@@ -83,6 +83,8 @@ export const DEFAULT_PROFILE = Object.freeze({
   accentColor: 'olive',
   // null no es un hueco: es "no eligio cara", y la app pinta la inicial del nombre.
   avatar: null,
+  /** Sin espacio activo: el modo general, que es como arranca todo el mundo. */
+  activeWorkspaceId: null,
 })
 
 /**
@@ -150,6 +152,30 @@ export function createProfile(input = {}, current = DEFAULT_PROFILE) {
   }
 
   /**
+   * En que espacio esta trabajando. `null` lo devuelve al modo general.
+   *
+   * **El gate `has()` no es opcional aqui**, y es la trampa de este campo: la columna entra en
+   * `PROFILE_COLUMNS`, que genera el `SET` del upsert, asi que sin conservar el valor actual cuando el
+   * parche no lo trae, CUALQUIER cambio de perfil —elegir un color, cambiar la hora del aviso— sacaria
+   * a la persona del espacio en el que esta. Es la misma forma que ya usa `avatar`.
+   *
+   * Aqui solo se valida la FORMA. Que el espacio exista y sea suyo lo comprueba `update-profile`, que
+   * es quien puede consultar: esta funcion es pura.
+   */
+  /*
+    `current` llega en dos formas y las dos tienen que funcionar: desde `update-profile` es un
+    `toPublicUser`, que trae el espacio RESUELTO en `activeWorkspace`; desde el default es
+    `DEFAULT_PROFILE`, que trae el id pelado. Leer solo una de las dos es como se cae el valor.
+  */
+  let activeWorkspaceId = current.activeWorkspace?.id ?? current.activeWorkspaceId ?? null
+  if (has('activeWorkspaceId')) {
+    activeWorkspaceId = input.activeWorkspaceId == null ? null : Number(input.activeWorkspaceId)
+    if (activeWorkspaceId !== null && !(Number.isInteger(activeWorkspaceId) && activeWorkspaceId > 0)) {
+      fields.activeWorkspaceId = 'Espacio no valido'
+    }
+  }
+
+  /**
    * Entero 0..23 y nada mas: '9' no se convierte (un string colado seria la app mandando el
    * valor del control sin parsear, y hay que verlo), 9.5 y 9.0000001 no son una hora agendable,
    * y null no borra nada porque sin hora no hay recordatorio — para eso esta el default.
@@ -187,6 +213,7 @@ export function createProfile(input = {}, current = DEFAULT_PROFILE) {
     reminderHour,
     accentColor: pick('accentColor', ACCENT_COLOR),
     avatar,
+    activeWorkspaceId,
   }
 
   if (Object.keys(fields).length) throw ValidationError(fields)
@@ -232,12 +259,38 @@ export const toPublicUser = (row) => ({
   // la app y este lado no puede saber cual es. Un nombre que esa version no tenga lo resuelve ella
   // con el mismo fallback que usa para null. Ver el docblock de AVATAR.
   avatar: row.avatar ?? DEFAULT_PROFILE.avatar,
+  /**
+   * El espacio activo, ya resuelto. `null` = el modo general, que es un ESTADO y no un hueco.
+   *
+   * Sale el objeto y no solo el id para que la app pinte su pastilla en el primer frame, sin esperar
+   * a la lista de espacios. Es el mismo trato que `stage`: lo resuelve el servidor, la app lo pinta.
+   */
+  activeWorkspace: row.activeWorkspace ?? null,
   emailVerified: !!row.emailVerifiedAt,
   onboardedAt: row.onboardedAt ?? null,
   authProvider: row.authProvider ?? 'password',
   // El paso lo decide el servidor: la app lo pinta, no lo calcula.
   stage: stageOf(row),
   createdAt: row.createdAt,
+})
+
+/**
+ * Otra persona, vista por mi. CUATRO campos, y la lista corta ES el contrato.
+ *
+ * Aparte de `toPublicUser` y no un filtro suyo, a proposito: aquella devuelve correo, fecha de
+ * nacimiento, focos, energia, estilo de recordatorio y hora de aviso — el perfil entero de alguien.
+ * Reusarla para pintar a un colaborador filtraria todo eso en una tira de recomendados.
+ *
+ * Lo que sale de aqui es lo que hace falta para reconocer a una persona en una lista: su nombre, su
+ * cara y su color. Nada mas, y añadir un campo aqui es una decision, no un detalle.
+ */
+export const toPublicMember = (row) => ({
+  id: row.id,
+  name: row.name,
+  avatar: row.avatar ?? null,
+  // El mismo filtro contra el catalogo que hace `toPublicUser`: un acento retirado saldria como un
+  // nombre que la app no sabe pintar.
+  accentColor: ACCENT_COLOR.includes(row.accentColor) ? row.accentColor : DEFAULT_PROFILE.accentColor,
 })
 
 export const catalogs = {

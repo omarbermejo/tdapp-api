@@ -96,6 +96,14 @@ export const toPublicTask = (row) => ({
   status: row.status,
   focusArea: row.focusArea,
   workspaceId: row.workspaceId ?? null,
+  /**
+   * La clasificacion del espacio al que pertenece, para que la tarea la HEREDE.
+   *
+   * El cliente pinta el icono y el color con `focusArea ?? workspaceTag`: una tarea sin foco propio se
+   * ve como su proyecto, y una con foco lo conserva. Por eso los siete focos no se retiran — siguen
+   * siendo el override, y `tasks.focus_area` sigue significando lo mismo que siempre.
+   */
+  workspaceTag: row.workspaceTag ?? null,
   /** Orden manual dentro del dia. null = nunca se reordeno; lo escribe solo PATCH /tasks/order. */
   position: row.position ?? null,
   dueAt: row.dueAt,
@@ -108,6 +116,11 @@ export const toPublicTask = (row) => ({
   startedAt: row.startedAt,
   running: !!row.startedAt,
   completedAt: row.completedAt,
+  /**
+   * Quien la cerro. En un espacio compartido no tiene por que ser el dueño, y de aqui sale que la
+   * racha y los logros sean de quien trabaja. `null` en las abiertas.
+   */
+  completedBy: row.completedBy ?? null,
   createdAt: row.createdAt,
 })
 

@@ -2,8 +2,12 @@ import { ConflictError, NotFoundError, ValidationError } from '../domain/errors.
 import { secondsSince, toPublicTask } from '../domain/task.js'
 
 /**
- * Arranca o para el cronometro de una tarea. Solo puede haber uno corriendo por usuario:
+ * Arranca o para TU cronometro en una tarea. Solo puede haber uno corriendo por persona:
  * dos timers a la vez es justo lo que un cerebro con TDAH no necesita.
+ *
+ * "Por persona" y no "por tarea": en un espacio compartido, que Ana cronometre algo no puede ocupar la
+ * ranura de Omar ni sumarse a su contador. El reloj vive en `task_timers`, una fila por pareja
+ * (tarea, persona), y `task.startedAt`/`elapsedSeconds` ya llegan resueltos para quien pregunta.
  */
 export const toggleTimer =
   ({ tasks }) =>

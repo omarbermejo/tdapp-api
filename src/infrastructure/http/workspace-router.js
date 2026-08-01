@@ -1,6 +1,7 @@
 import { Router } from 'express'
 
 import { workspaceCatalogs } from '../../domain/workspace.js'
+import { createJoinLimiter } from './rate-limit.js'
 import { requireAuth } from './require-auth.js'
 import { requireVerified } from './require-verified.js'
 
@@ -18,12 +19,56 @@ export function createWorkspaceRouter({ useCases, tokens }) {
 
   router.use(requireAuth({ tokens, useCases }), requireVerified())
 
+  /**
+   * UNA sola instancia para las dos rutas de codigo. Es el punto: la vista previa resuelve el mismo
+   * codigo que aceptar, asi que con contadores separados seria un oraculo gratis para enumerarlos.
+   * Va DESPUES de `requireAuth` porque cuenta por `req.userId`.
+   */
+  const limitJoin = createJoinLimiter()
+
   router.get('/', async (req, res) => {
     res.json(await useCases.listWorkspaces(req.userId))
   })
 
   router.post('/', async (req, res) => {
     res.status(201).json(await useCases.createWorkspace(req.userId, req.body))
+  })
+
+  /*
+    Las rutas de UN SEGMENTO van ANTES de `/:id`: `:id` es un comodin y se comeria las palabras
+    "collaborators" y "join". Es la misma trampa que ya obligo a poner `/tasks/order` antes de
+    `/tasks/:id`.
+  */
+  router.get('/collaborators', async (req, res) => {
+    res.json(await useCases.listCollaborators(req.userId))
+  })
+
+  router.post('/join/check', limitJoin, async (req, res) => {
+    res.json(await useCases.previewInvite(req.userId, req.body ?? {}))
+  })
+
+  router.post('/join', limitJoin, async (req, res) => {
+    const result = await useCases.acceptInvite(req.userId, req.body ?? {})
+    // Entrar bien perdona los intentos fallidos: quien tecleo mal dos veces y acerto no arrastra nada.
+    limitJoin.forgive(req.ip, req.userId)
+    res.json(result)
+  })
+
+  router.get('/:id/members', async (req, res) => {
+    res.json(await useCases.listMembers(req.userId, req.params.id))
+  })
+
+  router.get('/:id/invites', async (req, res) => {
+    res.json(await useCases.listInvites(req.userId, req.params.id))
+  })
+
+  router.post('/:id/invites', async (req, res) => {
+    res.status(201).json(await useCases.createInvite(req.userId, req.params.id, req.body ?? {}))
+  })
+
+  router.delete('/:id/invites/:code', async (req, res) => {
+    await useCases.revokeInvite(req.userId, req.params.id, req.params.code)
+    res.sendStatus(204)
   })
 
   router.get('/:id', async (req, res) => {

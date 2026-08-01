@@ -11,9 +11,9 @@ const MAX_IDS = 200
  * consistente: si solo se moviera una, las demas se quedarian con posicion NULL y el ORDER BY las
  * mandaria al final todas juntas — o sea que mover una cosa reordenaria el dia entero sin pedirlo.
  *
- * La comprobacion de propiedad va ANTES de escribir y de una sola consulta: con un id ajeno en la
- * lista, el UPDATE no encontraria la fila (lleva `WHERE user_id = ?`) y fallaria en silencio dejando
- * el orden a medias. Mejor rechazar la peticion entera.
+ * La comprobacion de permiso va ANTES de escribir y de una sola consulta: con un id que no se puede
+ * tocar, el UPDATE no encontraria la fila y fallaria en silencio dejando el orden a medias. Mejor
+ * rechazar la peticion entera.
  */
 export const orderTasks =
   ({ tasks }) =>
@@ -31,8 +31,10 @@ export const orderTasks =
     // que la persona no eligio.
     if (new Set(clean).size !== clean.length) throw ValidationError({ ids: 'Hay identificadores repetidos' })
 
-    const owned = await tasks.ownedIds(userId, clean)
-    if (owned.size !== clean.length) {
+    // `visibleIds` y no "las mias": el orden es del ESPACIO, asi que un miembro reordena un dia que
+    // incluye tareas de sus compañeros. Lo que se rechaza sigue siendo el id que no puede tocar.
+    const visible = await tasks.visibleIds(userId, clean)
+    if (visible.size !== clean.length) {
       throw ValidationError({ ids: 'Alguna de esas tareas no existe' })
     }
 
