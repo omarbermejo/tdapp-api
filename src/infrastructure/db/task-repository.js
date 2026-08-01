@@ -72,7 +72,38 @@ export function createTaskRepository(db) {
         .all(userId, from, to)
     },
 
-    async listByUser(userId, { status, date, focusArea } = {}) {
+    /**
+     * Cuanto trabajo cerrado hay en una ventana, partido por dia, area y tamaño.
+     *
+     * Agrupa por `due_date` por lo mismo que `doneByDay`, y devuelve filas crudas sin `toDomain`:
+     * esto no son tareas, son conteos. `minutes` viaja en el GROUP BY para que quien pliegue pueda
+     * resolver los minutos de cada grupo — es nullable, y ahi null significa "usa lo que sugiere el
+     * tamaño", que es una regla de dominio y no de SQL.
+     */
+    async doneStats(userId, { from, to }) {
+      return db
+        .prepare(`SELECT due_date AS date, focus_area AS focusArea, size, minutes, COUNT(*) AS done
+          FROM tasks
+          WHERE user_id = ?
+            AND status = 'done'
+            AND due_date IS NOT NULL
+            AND due_date >= ?
+            AND due_date <= ?
+          GROUP BY due_date, focus_area, size, minutes`)
+        .all(userId, from, to)
+    },
+
+    /**
+     * `backlog` es una fecha y significa "lo que quedo atras": vencido O sin agendar.
+     *
+     * Los dos casos van en el MISMO filtro a proposito. Sin esto, una tarea pendiente de ayer no
+     * salia en ninguna pantalla de la app —`date` compara igualdad exacta— y una con `due_date`
+     * nulo tampoco existia en ningun sitio, aunque el API siempre dejo crearla. Son el mismo
+     * agujero visto de dos formas y la pantalla que los muestra es una sola.
+     */
+    // `backlog` cae en null y no en undefined: node:sqlite no liga undefined, y quien llama sin el
+    // filtro (getToday) lo omite del objeto.
+    async listByUser(userId, { status, date, focusArea, backlog = null } = {}) {
       // Los filtros son opcionales: `? IS NULL OR columna = ?` evita armar SQL a mano.
       const rows = db
         .prepare(`SELECT ${COLUMNS} FROM tasks
@@ -80,8 +111,9 @@ export function createTaskRepository(db) {
             AND (? IS NULL OR status = ?)
             AND (? IS NULL OR due_date = ?)
             AND (? IS NULL OR focus_area = ?)
+            AND (? IS NULL OR due_date < ? OR due_date IS NULL)
           ORDER BY status = 'done', due_at IS NULL, due_at, id`)
-        .all(userId, status, status, date, date, focusArea, focusArea)
+        .all(userId, status, status, date, date, focusArea, focusArea, backlog, backlog)
       return rows.map(toDomain)
     },
 

@@ -4,6 +4,7 @@ import { deleteAccount } from './application/delete-account.js'
 import { deleteTask } from './application/delete-task.js'
 import { forgotPassword } from './application/forgot-password.js'
 import { getProfile } from './application/get-profile.js'
+import { getStats } from './application/get-stats.js'
 import { getStreak } from './application/get-streak.js'
 import { getToday } from './application/get-today.js'
 import { listTasks } from './application/list-tasks.js'
@@ -81,6 +82,7 @@ export function buildApp(overrides = {}) {
     toggleTimer: toggleTimer(deps),
     getToday: getToday(deps),
     getStreak: getStreak(deps),
+    getStats: getStats(deps),
     registerDevice: registerDevice(deps),
   }
 
