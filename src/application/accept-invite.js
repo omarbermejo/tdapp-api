@@ -34,13 +34,23 @@ export async function resolveInvite({ invites, workspaces }, code) {
 }
 
 /**
- * Entrar a un espacio con un codigo.
+ * Entrar a un espacio con un codigo — o PEDIR entrar, segun de que codigo se trate.
  *
- * El codigo es de UN uso: la fila se borra al aceptar. Uno de N usos que se filtra es una puerta
+ * El codigo es de UN uso: la fila se borra al entrar. Uno de N usos que se filtra es una puerta
  * abierta durante siete dias, y quien quiera meter a tres personas puede generar tres.
+ *
+ * **La bifurcacion es lo nuevo, y sale de que el codigo ahora tambien es un link y un QR.**
+ *
+ * - Un codigo atado a un CORREO es una invitacion nominal: el dueño escribio esa direccion, asi que
+ *   entra directo. Pedirle ademas que apruebe seria preguntarle dos veces lo mismo.
+ * - Un codigo ABIERTO —el que se comparte, el del QR— crea una SOLICITUD. Un enlace reenviado por
+ *   WhatsApp no puede meter gente a un espacio ajeno sin que su dueño diga que si.
+ *
+ * Y la invitacion NO se consume al solicitar: se consume al aprobar. Una solicitud rechazada no
+ * puede haber quemado el codigo de nadie.
  */
 export const acceptInvite =
-  ({ invites, workspaces, members, users }) =>
+  ({ invites, workspaces, members, users, requests }) =>
   async (userId, { code } = {}) => {
     const { invite, workspace } = await resolveInvite({ invites, workspaces }, code)
 
@@ -62,8 +72,22 @@ export const acceptInvite =
       throw ConflictError('Ya estás en ese espacio')
     }
 
-    await members.add(workspace.id, userId, 'member')
-    await invites.remove(invite.code)
+    const space = { id: workspace.id, name: workspace.name, icon: workspace.icon, accent: workspace.accent }
 
-    return { workspace: { id: workspace.id, name: workspace.name, icon: workspace.icon, accent: workspace.accent } }
+    // Nominal: entra directo, y el codigo se quema aqui.
+    if (invite.email) {
+      await members.add(workspace.id, userId, 'member')
+      await invites.remove(invite.code)
+      return { workspace: space, joined: true }
+    }
+
+    /**
+     * Abierto: queda pendiente de que el dueño apruebe.
+     *
+     * `pending` ya devuelve `{joined: false}` sin volver a insertar, asi que tocar el enlace dos
+     * veces no es un error — es la misma solicitud. Decirlo como conflicto haria que la segunda vez
+     * pareciera que algo fallo.
+     */
+    await requests.add(workspace.id, userId, invite.code)
+    return { workspace: space, joined: false }
   }

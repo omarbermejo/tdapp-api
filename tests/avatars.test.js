@@ -49,10 +49,11 @@ const signUp = async (email, name) => {
 }
 
 /** Crea una tarea en un dia concreto y la cierra. Es lo que mueve `done` y la racha. */
+/** Cierra COMO SI fuera ese dia: `completedOn` es lo que cuenta la racha. Ver `streak.test.js`. */
 const closeOn = async (date, title, token) => {
   const res = await call('POST', '/tasks', { body: { title, dueAt: `${date}T12:00:00-06:00` }, token })
   const { task } = await res.json()
-  await call('PATCH', `/tasks/${task.id}`, { body: { status: 'done' }, token })
+  await call('PATCH', `/tasks/${task.id}`, { body: { status: 'done', completedOn: date }, token })
 }
 
 /** Un dia fijo, para que los tests no dependan del reloj. */
