@@ -19,14 +19,25 @@ const toDomain = (row) =>
     accentColor: row.accent_color,
     avatar: row.avatar,
     activeWorkspaceId: row.active_workspace_id,
-    /** El espacio activo ya resuelto, para que la app pinte su pastilla sin una segunda peticion. */
-    activeWorkspace: row.active_workspace_id && {
-      id: row.active_workspace_id,
-      name: row.active_workspace_name,
-      icon: row.active_workspace_icon,
-      accent: row.active_workspace_accent,
-      tag: row.active_workspace_tag,
-    },
+    /**
+     * El espacio activo ya resuelto, para que la app pinte su pastilla sin una segunda peticion.
+     *
+     * Se decide por `active_workspace_name` y NO por el id, y esa diferencia se vio en pantalla: con el
+     * id, un `active_workspace_id` que apunta a una fila que ya no esta devuelve `{id, name: null,
+     * icon: null}` —el LEFT JOIN no encontro nada pero el id sigue ahi— y la app pinta una pastilla
+     * vacia, sin nombre y sin icono. El FK es `ON DELETE SET NULL` y deberia bastar, pero eso solo se
+     * cumple si `PRAGMA foreign_keys` estuvo activo en la conexion que borro: aqui se lee el resultado,
+     * no la intencion. Con el nombre como testigo, un espacio que no existe es el modo general.
+     */
+    activeWorkspace: row.active_workspace_name
+      ? {
+          id: row.active_workspace_id,
+          name: row.active_workspace_name,
+          icon: row.active_workspace_icon,
+          accent: row.active_workspace_accent,
+          tag: row.active_workspace_tag,
+        }
+      : null,
     onboardedAt: row.onboarded_at,
   }
 
