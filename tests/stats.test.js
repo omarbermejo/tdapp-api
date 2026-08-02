@@ -101,6 +101,29 @@ test('sin nada cerrado devuelve vacio, no nulos', () => {
   assert.deepEqual(empty, { byDay: [], byArea: [], totals: { done: 0, minutes: 0 } })
 })
 
+test('las agendadas cuentan aunque no se hayan cerrado, y crean su dia', () => {
+  const { byDay } = foldStats(
+    [{ date: '2026-07-30', focusArea: 'work', size: 'medium', minutes: null, done: 1 }],
+    [
+      { date: '2026-07-30', planned: 3 },
+      // Un dia que NO esta en las cerradas: es el caso que el mapa de calor necesita ver.
+      { date: '2026-07-31', planned: 2 },
+    ]
+  )
+  assert.deepEqual(byDay.map((d) => d.date), ['2026-07-30', '2026-07-31'])
+  assert.equal(byDay[0].planned, 3, 'las 3 del dia, no solo la cerrada')
+  assert.equal(byDay[0].done, 1)
+  assert.equal(byDay[1].planned, 2, 'un dia con puras pendientes existe')
+  assert.equal(byDay[1].done, 0)
+})
+
+test('sin filas de agendadas, planned cae en done y nunca queda por debajo', () => {
+  const { byDay } = foldStats([
+    { date: '2026-07-30', focusArea: 'work', size: 'medium', minutes: null, done: 2 },
+  ])
+  assert.equal(byDay[0].planned, 2, 'el piso honesto es lo cerrado, no 0')
+})
+
 // --- endpoint ------------------------------------------------------------------------------------
 
 test('GET /me/stats resume la ventana pedida', async () => {
@@ -116,6 +139,11 @@ test('GET /me/stats resume la ventana pedida', async () => {
   assert.equal(stats.totals.done, 2, 'la abierta no cuenta')
   assert.equal(stats.totals.minutes, SIZE_MINUTES.deep + SIZE_MINUTES.quick)
   assert.deepEqual(stats.byDay.map((d) => d.date), ['2026-07-28', '2026-07-30'])
+
+  // Lo que alimenta el mapa de calor: el 30 tiene dos agendadas (una cerrada y la abierta).
+  const treinta = stats.byDay.find((d) => d.date === '2026-07-30')
+  assert.equal(treinta.planned, 2, 'la abierta SI cuenta como agendada')
+  assert.equal(treinta.done, 1, 'pero no como cerrada')
 })
 
 test('la ventana por defecto son cuatro semanas y respeta el dia del cliente', async () => {

@@ -259,3 +259,89 @@ test('PATCH /me/profile valida, mergea y sella onboarded_at una sola vez', async
   assert.deepEqual(merged.focusAreas, ['work'])
   assert.equal(merged.onboardedAt, saved.onboardedAt)
 })
+
+test('el avatar guarda el memoji, lo borra con null y sobrevive a un parche de otro campo', async () => {
+  const token = await verifiedToken('avatar@nexgen.mx')
+
+  // Nace sin avatar: null es "no eligio cara", y la app pinta la inicial del nombre.
+  const nuevo = await call(url, 'GET', '/me', { token })
+  assert.equal((await nuevo.json()).user.avatar, null)
+
+  for (const avatar of [
+    'memoji-7', // sin padding: la app siempre manda dos digitos
+    'memoji-007',
+    'Memoji-07', // el nombre del archivo va en minusculas
+    'memoji_07',
+    '../assets/memoji-07', // el identificador nunca es una ruta
+    'https://x/memoji-07.webp',
+    'memoji-07.webp', // la extension es cosa del bundle, no del dato
+    'memoji-ab',
+    7,
+    ['memoji-07'],
+    '',
+  ]) {
+    const res = await call(url, 'PATCH', '/me/profile', { token, body: { avatar } })
+    assert.equal(res.status, 400, `${JSON.stringify(avatar)} deberia rechazarse`)
+    assert.ok((await res.json()).fields.avatar, 'el error va en fields.avatar')
+  }
+
+  const ok = await call(url, 'PATCH', '/me/profile', { token, body: { avatar: 'memoji-07' } })
+  assert.equal((await ok.json()).user.avatar, 'memoji-07')
+
+  /*
+    Una cara que existe en el bundle pero NO en el producto se rechaza con 400.
+
+    Este assert es el que cambio de signo cuando las caras pasaron a ganarse: antes decia que
+    memoji-45 entraba, porque el catalogo vivia del lado del cliente. Ahora el catalogo es permiso, y
+    de las cuarenta y cinco del bundle el producto solo ofrece veintitres.
+  */
+  const reserva = await call(url, 'PATCH', '/me/profile', { token, body: { avatar: 'memoji-45' } })
+  assert.equal(reserva.status, 400)
+  assert.ok((await reserva.json()).fields.avatar)
+
+  // Una de las que se ganan da 403 y no 400: existe, pero no es suya. Los datos estan bien; lo que
+  // falta es el logro.
+  const ajena = await call(url, 'PATCH', '/me/profile', { token, body: { avatar: 'memoji-09' } })
+  assert.equal(ajena.status, 403)
+
+  // Un parche de otro campo no lo mueve, y persiste en una lectura nueva.
+  await call(url, 'PATCH', '/me/profile', { token, body: { accentColor: 'clay' } })
+  const me = await call(url, 'GET', '/me', { token })
+  assert.equal((await me.json()).user.avatar, 'memoji-07', 'el avatar persiste entre peticiones')
+
+  // null lo borra: volver a la inicial es una eleccion tan valida como elegir cara.
+  const borrado = await call(url, 'PATCH', '/me/profile', { token, body: { avatar: null } })
+  assert.equal((await borrado.json()).user.avatar, null)
+})
+
+test('el acento admite un color propio en hex, y SOBREVIVE a la relectura', async () => {
+  const token = await verifiedToken('hex-acento@nexgen.mx')
+
+  // Uno de los seis nombres nuevos: ensanchar el catalogo no rompe nada.
+  const nombrado = await call(url, 'PATCH', '/me/profile', { token, body: { accentColor: 'lilac' } })
+  assert.equal(nombrado.status, 200)
+  assert.equal((await nombrado.json()).user.accentColor, 'lilac')
+
+  /*
+    Y el hex de la opcion "Otro". La segunda mitad de este test es la que importa: el filtro de
+    lectura de `toPublicUser` existia para que un nombre retirado no llegara a la app, y con un hex
+    devolvia 'olive' en cada GET — el color se guardaba, la app lo pintaba optimista, y a la primera
+    recarga volvia al verde sin decir nada.
+  */
+  const propio = await call(url, 'PATCH', '/me/profile', { token, body: { accentColor: '#c17f86' } })
+  assert.equal(propio.status, 200)
+  assert.equal((await propio.json()).user.accentColor, '#c17f86', 'al escribir')
+
+  const releido = await call(url, 'GET', '/me', { token })
+  assert.equal((await releido.json()).user.accentColor, '#c17f86', 'y al LEER, que es donde fallaba')
+})
+
+test('lo que no es ni nombre ni hex se sigue rechazando', async () => {
+  const token = await verifiedToken('hex-malo@nexgen.mx')
+
+  for (const malo of ['rojo', '#ff', '#gggggg', 'rgb(1,2,3)', '#FF00AA ']) {
+    const res = await call(url, 'PATCH', '/me/profile', { token, body: { accentColor: malo } })
+    assert.equal(res.status, 400, `"${malo}" no deberia pasar`)
+    assert.ok((await res.json()).fields.accentColor)
+  }
+})

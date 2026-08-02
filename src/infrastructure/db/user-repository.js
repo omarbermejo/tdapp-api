@@ -17,6 +17,27 @@ const toDomain = (row) =>
     reminderStyle: row.reminder_style,
     reminderHour: row.reminder_hour,
     accentColor: row.accent_color,
+    avatar: row.avatar,
+    activeWorkspaceId: row.active_workspace_id,
+    /**
+     * El espacio activo ya resuelto, para que la app pinte su pastilla sin una segunda peticion.
+     *
+     * Se decide por `active_workspace_name` y NO por el id, y esa diferencia se vio en pantalla: con el
+     * id, un `active_workspace_id` que apunta a una fila que ya no esta devuelve `{id, name: null,
+     * icon: null}` —el LEFT JOIN no encontro nada pero el id sigue ahi— y la app pinta una pastilla
+     * vacia, sin nombre y sin icono. El FK es `ON DELETE SET NULL` y deberia bastar, pero eso solo se
+     * cumple si `PRAGMA foreign_keys` estuvo activo en la conexion que borro: aqui se lee el resultado,
+     * no la intencion. Con el nombre como testigo, un espacio que no existe es el modo general.
+     */
+    activeWorkspace: row.active_workspace_name
+      ? {
+          id: row.active_workspace_id,
+          name: row.active_workspace_name,
+          icon: row.active_workspace_icon,
+          accent: row.active_workspace_accent,
+          tag: row.active_workspace_tag,
+        }
+      : null,
     onboardedAt: row.onboarded_at,
   }
 
@@ -24,16 +45,22 @@ const toDomain = (row) =>
 const SELECT = `SELECT u.id, u.email, u.name, u.password_hash, u.auth_provider,
                        u.email_verified_at, u.created_at,
                        p.birth_date, p.focus_areas, p.peak_energy,
-                       p.reminder_style, p.reminder_hour, p.accent_color, p.onboarded_at
+                       p.reminder_style, p.reminder_hour, p.accent_color, p.avatar, p.onboarded_at,
+                       p.active_workspace_id,
+                       aw.name AS active_workspace_name, aw.icon AS active_workspace_icon,
+                       aw.accent AS active_workspace_accent, aw.tag AS active_workspace_tag
                   FROM users u
-                  LEFT JOIN user_profiles p ON p.user_id = u.id`
+                  LEFT JOIN user_profiles p ON p.user_id = u.id
+                  -- El espacio activo entra por el mismo JOIN y no por una consulta aparte: esto
+                  -- corre en CADA request autenticado, y es una union por clave primaria.
+                  LEFT JOIN workspaces aw ON aw.id = p.active_workspace_id`
 
 /**
  * Las columnas del perfil, en el mismo orden que profileValues: de aqui salen la lista, los
  * placeholders y el SET del upsert, asi que agregar una columna es tocar estas dos cosas
  * pegadas y no cuatro SQL sueltos donde olvidar una borra el dato sin error.
  */
-const PROFILE_COLUMNS = ['birth_date', 'focus_areas', 'peak_energy', 'reminder_style', 'reminder_hour', 'accent_color']
+const PROFILE_COLUMNS = ['birth_date', 'focus_areas', 'peak_energy', 'reminder_style', 'reminder_hour', 'accent_color', 'avatar', 'active_workspace_id']
 
 const profileValues = (profile) => [
   profile.birthDate,
@@ -42,6 +69,10 @@ const profileValues = (profile) => [
   profile.reminderStyle,
   profile.reminderHour,
   profile.accentColor,
+  // El ?? no es adorno: node:sqlite no liga undefined, y un perfil armado a mano sin la llave
+  // reventaria el run() en vez de guardar el null que significa "sin cara".
+  profile.avatar ?? null,
+  profile.activeWorkspaceId ?? null,
 ]
 
 const COLUMNS = PROFILE_COLUMNS.join(', ')

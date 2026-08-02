@@ -230,3 +230,142 @@ test('/tasks/catalogs es publico para pintar las opciones', async () => {
   assert.equal(catalogs.sizeMinutes.deep, 50)
   assert.ok(catalogs.focusArea.includes('creativity'))
 })
+
+test('/me/tasks/summary cuenta toda la historia, no una ventana', async () => {
+  // Usuario nuevo: los conteos son de por vida, asi que sobre `auth` dependerian de todo lo
+  // anterior de este archivo.
+  const token = await signUp('resumen@nexgen.mx', 'Resumen')
+  const summary = async () => (await (await call('GET', '/me/tasks/summary', { token })).json()).counts
+
+  assert.deepEqual(await summary(), { total: 0, pending: 0, done: 0 }, 'cuenta nueva en ceros')
+
+  // Una sin agendar y una vencida hace anos: las dos las pierde /me/stats (filtra due_date IS NOT
+  // NULL y una ventana de 28 dias) y son justo las que esta tarjeta no puede perder.
+  const suelta = (await (await newTask({ title: 'Sin fecha' }, token)).json()).task
+  const vieja = (await (await newTask({ title: 'Vieja', dueAt: '2020-01-01T12:00:00-06:00' }, token)).json()).task
+  await newTask({ title: 'Pendiente', dueAt: '2026-08-01T18:00:00-06:00' }, token)
+
+  await call('PATCH', `/tasks/${suelta.id}`, { body: { status: 'done' }, token })
+  await call('PATCH', `/tasks/${vieja.id}`, { body: { status: 'done' }, token })
+
+  assert.deepEqual(await summary(), { total: 3, pending: 1, done: 2 })
+
+  // Reabrir mueve el conteo en los dos sentidos: se deriva de la tabla, no se acumula.
+  await call('PATCH', `/tasks/${vieja.id}`, { body: { status: 'pending' }, token })
+  assert.deepEqual(await summary(), { total: 3, pending: 2, done: 1 })
+
+  await call('DELETE', `/tasks/${suelta.id}`, { token })
+  assert.deepEqual(await summary(), { total: 2, pending: 2, done: 0 })
+
+  // No se cuelan las tareas de nadie mas.
+  const ajeno = (await (await call('GET', '/me/tasks/summary', { token: otherAuth })).json()).counts
+  const suyas = (await (await call('GET', '/tasks', { token: otherAuth })).json()).tasks
+  assert.equal(ajeno.total, suyas.length)
+})
+
+test('/me/tasks/summary exige token', async () => {
+  assert.equal((await call('GET', '/me/tasks/summary')).status, 401)
+})
+
+// --- orden manual dentro del dia -----------------------------------------------------------------
+
+/** Tres tareas del mismo dia con horas DESORDENADAS, para distinguir orden manual de orden de reloj. */
+const threeOnDay = async (date, token = auth) => {
+  const at = async (hour, title) => {
+    const res = await call('POST', '/tasks', {
+      body: { title, dueAt: `${date}T${String(hour).padStart(2, '0')}:00:00-06:00` },
+      token,
+    })
+    return (await res.json()).task
+  }
+  return { nueve: await at(9, 'Nueve'), trece: await at(13, 'Trece'), diecinueve: await at(19, 'Diecinueve') }
+}
+
+const titlesOn = async (date, token = auth) => {
+  const res = await call('GET', `/tasks?date=${date}`, { token })
+  return (await res.json()).tasks.map((t) => t.title)
+}
+
+test('sin reordenar, un dia sigue saliendo por hora como siempre', async () => {
+  await threeOnDay('2026-09-01')
+  assert.deepEqual(await titlesOn('2026-09-01'), ['Nueve', 'Trece', 'Diecinueve'])
+})
+
+test('PATCH /tasks/order manda sobre la hora', async () => {
+  const { nueve, trece, diecinueve } = await threeOnDay('2026-09-02')
+
+  const res = await call('PATCH', '/tasks/order', {
+    body: { ids: [diecinueve.id, nueve.id, trece.id] },
+    token: auth,
+  })
+  assert.equal(res.status, 200)
+  const { tasks } = await res.json()
+  assert.deepEqual(tasks.map((t) => t.position), [0, 1, 2], 'la posicion es el indice')
+
+  assert.deepEqual(await titlesOn('2026-09-02'), ['Diecinueve', 'Nueve', 'Trece'])
+})
+
+test('/tasks/order no lo captura la ruta /:id', async () => {
+  // Si `:id` ganara, esto seria un updateTask con id 'order' y devolveria 404 en vez de 400.
+  const res = await call('PATCH', '/tasks/order', { body: { ids: [] }, token: auth })
+  assert.equal(res.status, 400, 'llego a orderTasks y valido la lista vacia')
+})
+
+test('un PATCH normal no pisa el orden que pusiste a mano', async () => {
+  const { nueve, trece, diecinueve } = await threeOnDay('2026-09-03')
+  await call('PATCH', '/tasks/order', { body: { ids: [diecinueve.id, trece.id, nueve.id] }, token: auth })
+
+  await call('PATCH', `/tasks/${trece.id}`, { body: { title: 'Trece editada' }, token: auth })
+
+  assert.deepEqual(await titlesOn('2026-09-03'), ['Diecinueve', 'Trece editada', 'Nueve'])
+})
+
+test('una tarea nueva en un dia ya ordenado baja al final, no se cuela', async () => {
+  const { nueve, trece, diecinueve } = await threeOnDay('2026-09-04')
+  await call('PATCH', '/tasks/order', { body: { ids: [diecinueve.id, trece.id, nueve.id] }, token: auth })
+
+  // Las 7am: por hora iria primera, pero el orden lo puso la persona y esto es nuevo.
+  await call('POST', '/tasks', {
+    body: { title: 'Recien anotada', dueAt: '2026-09-04T07:00:00-06:00' },
+    token: auth,
+  })
+
+  assert.deepEqual(await titlesOn('2026-09-04'), ['Diecinueve', 'Trece', 'Nueve', 'Recien anotada'])
+})
+
+test('lo cerrado baja aunque tenga posicion', async () => {
+  const { nueve, trece, diecinueve } = await threeOnDay('2026-09-05')
+  await call('PATCH', '/tasks/order', { body: { ids: [diecinueve.id, trece.id, nueve.id] }, token: auth })
+  await call('PATCH', `/tasks/${diecinueve.id}`, { body: { status: 'done' }, token: auth })
+
+  assert.deepEqual(await titlesOn('2026-09-05'), ['Trece', 'Nueve', 'Diecinueve'])
+})
+
+test('/me/today dice la de la hora mas cercana, no la primera de la lista', async () => {
+  const { nueve, trece, diecinueve } = await threeOnDay('2026-09-06')
+  await call('PATCH', '/tasks/order', { body: { ids: [diecinueve.id, trece.id, nueve.id] }, token: auth })
+
+  const res = await call('GET', '/me/today?date=2026-09-06', { token: auth })
+  const { next, tasks } = await res.json()
+  assert.equal(tasks[0].title, 'Diecinueve', 'la lista respeta el orden manual')
+  assert.equal(next.title, 'Nueve', 'pero "lo que sigue" es el reloj, no el orden')
+})
+
+test('order rechaza ids ajenos, repetidos y basura, sin escribir nada', async () => {
+  const { nueve, trece } = await threeOnDay('2026-09-07')
+  const ajena = await (
+    await call('POST', '/tasks', { body: { title: 'De Ana' }, token: otherAuth })
+  ).json()
+
+  for (const ids of [[nueve.id, ajena.task.id], [nueve.id, nueve.id], [nueve.id, 'abc'], [0]]) {
+    const res = await call('PATCH', '/tasks/order', { body: { ids }, token: auth })
+    assert.equal(res.status, 400, JSON.stringify(ids))
+  }
+
+  // Nada se escribio: el dia sigue en orden de reloj.
+  assert.deepEqual(await titlesOn('2026-09-07'), ['Nueve', 'Trece', 'Diecinueve'])
+})
+
+test('order exige token', async () => {
+  assert.equal((await call('PATCH', '/tasks/order', { body: { ids: [1] } })).status, 401)
+})

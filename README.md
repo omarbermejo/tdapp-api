@@ -7,7 +7,7 @@ cp .env.example .env
 node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))'  # pega esto en JWT_SECRET
 npm install
 npm run dev     # recarga al guardar
-npm test        # 92 tests
+npm test        # 145 tests
 ```
 
 Al arrancar imprime la IP de LAN. Esa es la que usa el celular; `localhost` solo funciona en el simulador.
@@ -60,8 +60,12 @@ El token sigue firmado hasta que venza y no hay lista negra: no abre nada porque
 `user_id` sobre una fila que ya no existe.
 
 Solo `email`, `password` y `name` son obligatorios al registrar. El resto del perfil
-(`birthDate`, `focusAreas`, `peakEnergy`, `reminderStyle`, `reminderHour`, `accentColor`)
+(`birthDate`, `focusAreas`, `peakEnergy`, `reminderStyle`, `reminderHour`, `accentColor`, `avatar`)
 cae en defaults para que el onboarding se pueda saltar.
+
+`avatar` es el identificador del memoji (`memoji-07`), no un archivo ni una URL: las imágenes viven
+en el bundle de la app. `null` significa "no eligió" y la app pinta la inicial del nombre. No sale en
+`/auth/catalogs` porque su respuesta depende de quién pregunta — ver **Caras**.
 
 ## Tareas
 
@@ -88,6 +92,9 @@ cae en defaults para que el onboarding se pueda saltar.
 | `GET` | `/me` | perfil |
 | `GET` | `/me/today` | `?date=YYYY-MM-DD` — todo el día en una llamada |
 | `GET` | `/me/streak` | `?date=YYYY-MM-DD` — racha, mejor marca y el punteo de la semana |
+| `GET` | `/me/tasks/summary` | `{ counts: { total, pending, done } }` de toda la cuenta |
+| `GET` | `/me/avatars` | `?date=` — el vestidor: caras libres y los cinco logros |
+| `POST` | `/me/avatars` | `{ milestone, avatar }` — quedarse una de las tres |
 | `POST` | `/me/devices` | `{ token, platform }` guarda el Expo push token |
 
 `/me/today` devuelve `{ date, user, counts, next, running, tasks }`: exactamente lo que
@@ -96,6 +103,47 @@ necesitan el widget de iOS, el de Android y la Live Activity, sin encadenar peti
 `/me/streak` devuelve `{ date, days, best, week }`, con `week` de lunes a domingo y un `done` por día.
 Va aparte de `/today` porque son dos preguntas distintas: el widget de racha no necesita las tareas
 del día ni al contrario, y juntarlas obligaría a la mitad de los widgets a traerse datos que no usan.
+
+`/me/tasks/summary` es de por vida a propósito, y por eso no lo cubre `/me/stats`: ese mira una
+ventana de 28 días y solo tareas con fecha, así que su `totals.done` **encoge con el tiempo** y no
+cuenta lo que nunca se agendó. Sirve para una gráfica de progreso, no para el contador de un perfil.
+Tampoco es una columna contador: se deriva de la tabla con un `GROUP BY status`, igual que `stage`
+se deriva de sus dos fechas.
+
+## Caras
+
+El bundle de la app trae 45 memojis; el producto ofrece 23. **8 son libres** desde el primer día y
+**15 se ganan**, de tres en tres, en cinco logros (`domain/avatar.js`). Las otras 22 no existen para
+nadie: no las pinta la app ni las acepta el API. Son reserva para logros futuros, que sale más barato
+que volver a cortar la lámina de Figma.
+
+De cada logro se elige **una** de las tres, no se ganan las tres. Elegir obliga a mirarlas y quedarse
+con la que te representa; un logro que suelta tres caras a la vez se pasa de largo.
+
+| Logro | Meta |
+|---|---|
+| `first` | 1 tarea cerrada |
+| `ten` | 10 tareas cerradas |
+| `week` | racha de 7 días |
+| `fifty` | 50 tareas cerradas |
+| `month` | racha de 30 días |
+
+Dos de volumen, dos de constancia y uno más de volumen: quien cierra mucho de golpe y quien cierra
+poco todos los días llegan los dos a algún sitio.
+
+**Si un logro está cumplido no se guarda: se deriva** del conteo histórico de tareas cerradas y de la
+mejor racha, que ya viven en `tasks`. Una columna `unlocked_at` sería un tercer estado capaz de
+contradecirlos — el mismo argumento con el que `stage` no es columna. Lo único que `user_avatars`
+guarda es la elección, que es lo único que no se puede recalcular.
+
+`done` es el histórico y **no** la ventana de `/me/stats`: con la ventana, un logro se podría
+**perder** dejando pasar el tiempo, y un logro que se pierde solo no es un logro.
+
+El permiso lo comprueba `update-profile.js`, no la app: `PATCH /me/profile` con una cara no ganada da
+**403**. Que la pantalla no la pinte no basta — un PATCH a mano se la pondría igual, y entonces el
+candado sería decorativo. Ese es también el motivo de que `avatar` pasara de validarse por patrón
+(`/^memoji-\d{2}$/`) a validarse contra un catálogo cerrado: dejó de describir qué archivos existen y
+pasó a describir quién puede usar cada uno.
 
 Dos decisiones de la racha, las dos en `domain/streak.js`:
 

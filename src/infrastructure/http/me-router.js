@@ -52,6 +52,56 @@ export function createMeRouter({ useCases, tokens }) {
     res.json(await useCases.getStats(req.userId, req.query))
   })
 
+  /**
+   * El resumen de la tarjeta del perfil. Aparte de /stats porque no es la misma pregunta: /stats
+   * mira una ventana de cuatro semanas y solo tareas con fecha, esto mira la vida entera de la
+   * cuenta. Un contador de perfil que encoge con el tiempo no es un contador.
+   */
+  router.get('/tasks/summary', async (req, res) => {
+    res.json(await useCases.getTaskCounts(req.userId))
+  })
+
+  /**
+   * El vestidor. No va en `/auth/catalogs` aunque suene a catalogo: la respuesta depende de quien
+   * pregunta — que logros lleva y que caras eligio — y `catalogs` es publico y sin usuario.
+   *
+   * `?date=` por lo mismo que en /streak: la mejor racha se mide en dias locales del cliente.
+   */
+  router.get('/avatars', async (req, res) => {
+    res.json(await useCases.getAvatars(req.userId, req.query.date))
+  })
+
+  /**
+   * Quedarse con una de las tres caras de un logro cumplido. Es la unica forma de ganar una: nada
+   * de esto pasa por PATCH /profile, que solo cambia la que llevas puesta.
+   *
+   * 200 y no 201: devuelve el vestidor entero al dia, no un recurso nuevo con URL propia.
+   */
+  router.post('/avatars', async (req, res) => {
+    res.json(await useCases.claimAvatar(req.userId, req.body ?? {}, req.query.date))
+  })
+
+  /**
+   * Las novedades de tus tareas.
+   *
+   * `?before=` pagina hacia atras y `?since=` trae el hueco que te perdiste — el cliente usa el
+   * segundo al reconectar el socket, y por eso la pantalla funciona igual con el socket caido: la
+   * tabla es la fuente y el tiempo real solo se salta la espera.
+   */
+  router.get('/events', async (req, res) => {
+    res.json(await useCases.listEvents(req.userId, req.query))
+  })
+
+  /** Solo el numero del globo. El inicio lo pide en cada foco y no necesita ni una fila. */
+  router.get('/events/unread', async (req, res) => {
+    res.json(await useCases.countUnread(req.userId))
+  })
+
+  /** Sin `id` en el cuerpo, marca todas. Devuelve el contador ya recalculado. */
+  router.post('/events/read', async (req, res) => {
+    res.json(await useCases.readEvents(req.userId, req.body?.id ?? null))
+  })
+
   router.patch('/profile', async (req, res) => {
     res.json(await useCases.updateProfile(req.userId, req.body ?? {}))
   })

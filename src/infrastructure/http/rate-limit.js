@@ -1,5 +1,5 @@
 import { TooManyRequestsError } from '../../domain/errors.js'
-import { FORGOT_POLICY, LOGIN_POLICY, createLimiter } from '../../domain/rate-limit.js'
+import { FORGOT_POLICY, JOIN_POLICY, LOGIN_POLICY, createLimiter } from '../../domain/rate-limit.js'
 
 /**
  * El freno de `/auth/login` como middleware.
@@ -52,6 +52,44 @@ export function createLoginLimiter() {
  * que solo frenara a las cuentas reales seria el buscador de correos registrados que el 202 de
  * /auth/forgot esta evitando.
  */
+/**
+ * El freno de los codigos de invitacion.
+ *
+ * **Una sola instancia para las DOS rutas** (`/join/check` y `/join`), y eso es el punto entero: la
+ * vista previa resuelve el mismo codigo que aceptar, asi que con un contador propio seria un oraculo
+ * para enumerar codigos sin gastar intentos del que importa. Se monta el MISMO middleware en las dos.
+ *
+ * Cuenta por IP y por usuario, no por correo: la peticion ya viene autenticada, y el id de la cuenta es
+ * una llave estable que sobrevive a rotar de IP. Por eso va DESPUES de `requireAuth`, al reves que el
+ * limitador del login.
+ */
+export function createJoinLimiter() {
+  const limiter = createLimiter(JOIN_POLICY)
+
+  const middleware = (req, _res, next) => {
+    const now = Date.now()
+    const ip = req.ip ?? 'sin-ip'
+
+    // Los dos se registran siempre, aunque el primero ya haya frenado: si no, el segundo contador
+    // nunca subiria y el hueco volveria a abrirse. Mismo argumento que en el login.
+    const byIp = limiter.hit(`ip:${ip}`, now)
+    const byUser = req.userId ? limiter.hit(`user:${req.userId}`, now) : false
+
+    if (byIp || byUser) {
+      return next(TooManyRequestsError('Demasiados intentos. Espera unos minutos.'))
+    }
+    next()
+  }
+
+  /** Entrar bien limpia la cuenta: quien se equivoco dos veces y acerto no arrastra los fallos. */
+  middleware.forgive = (ip, userId) => {
+    limiter.clear(`ip:${ip ?? 'sin-ip'}`)
+    if (userId) limiter.clear(`user:${userId}`)
+  }
+
+  return middleware
+}
+
 export function createForgotLimiter() {
   const limiter = createLimiter(FORGOT_POLICY)
 

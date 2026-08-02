@@ -2,6 +2,19 @@ import { ValidationError } from './errors.js'
 import { FOCUS_AREAS } from './user.js'
 
 export const TASK_SIZE = ['quick', 'medium', 'deep']
+
+/**
+ * Las caras que puede llevar una tarea: los slugs de `assets/icons3d/` de la app.
+ *
+ * Catalogo cerrado y no patron libre, al reves que el avatar en su dia: aqui el backend SI puede
+ * decidir cuales existen, porque el set lo genera un script del repo y no crece por su cuenta. Lo que
+ * llega es un slug, nunca una imagen — los archivos viven en el bundle del cliente.
+ */
+export const TASK_ICONS = [
+  'academic', 'calendar', 'check', 'clock', 'creativity', 'graph-up', 'health', 'home',
+  'home-chrome', 'leaf', 'light', 'lightning', 'money', 'moon', 'relationships', 'trophy',
+  'user', 'work',
+]
 export const TASK_STATUS = ['pending', 'done']
 
 /** Minutos sugeridos por tamaño. La app los usa para el timer y la Live Activity. */
@@ -57,13 +70,35 @@ export function makeTask(input = {}, base = {}) {
     fields.dueAt = 'Usa una fecha ISO con zona, ej 2026-07-30T18:00:00-06:00'
   }
 
+  /**
+   * El espacio de trabajo, opcional. null lo saca del espacio sin borrar la tarea.
+   *
+   * Solo se valida la FORMA aqui: que el espacio exista y sea de esta persona lo garantiza la clave
+   * ajena, y comprobarlo en el dominio obligaria a este modulo a hacer I/O. Un id de otra cuenta
+   * revienta con un error de FK, que es un 500 feo pero no una fuga: la fila no se escribe.
+   */
+  const workspaceId =
+    merged.workspaceId == null || merged.workspaceId === '' ? null : Number(merged.workspaceId)
+  if (workspaceId !== null && !(Number.isInteger(workspaceId) && workspaceId > 0)) {
+    fields.workspaceId = 'Espacio no valido'
+  }
+
+  /**
+   * La cara elegida a mano. null = "no elegi", y entonces la app la deriva de la clasificacion como
+   * ha hecho siempre. Por eso no cae en un default: un default borraria esa diferencia.
+   */
+  const icon = str(merged.icon) || null
+  if (icon && !TASK_ICONS.includes(icon)) fields.icon = `Opcion no valida: ${icon}`
+
   const task = {
     title,
+    icon,
     notes: notes || null,
     size: pick('size', TASK_SIZE, 'medium'),
     minutes,
     status: pick('status', TASK_STATUS, 'pending'),
     focusArea,
+    workspaceId,
     dueAt,
     // La fecha local viene dentro del ISO que manda el cliente: filtrar "hoy" es comparar
     // texto y no adivinar zonas horarias en el servidor.
@@ -81,6 +116,19 @@ export const toPublicTask = (row) => ({
   size: row.size,
   status: row.status,
   focusArea: row.focusArea,
+  /** El slug elegido a mano, o null para que la app lo derive de la clasificacion. */
+  icon: row.icon ?? null,
+  workspaceId: row.workspaceId ?? null,
+  /**
+   * La clasificacion del espacio al que pertenece, para que la tarea la HEREDE.
+   *
+   * El cliente pinta el icono y el color con `focusArea ?? workspaceTag`: una tarea sin foco propio se
+   * ve como su proyecto, y una con foco lo conserva. Por eso los siete focos no se retiran — siguen
+   * siendo el override, y `tasks.focus_area` sigue significando lo mismo que siempre.
+   */
+  workspaceTag: row.workspaceTag ?? null,
+  /** Orden manual dentro del dia. null = nunca se reordeno; lo escribe solo PATCH /tasks/order. */
+  position: row.position ?? null,
   dueAt: row.dueAt,
   dueDate: row.dueDate,
   /** Lo que la persona puso; si no puso nada, lo que sugiere el tamaño. */
@@ -91,6 +139,11 @@ export const toPublicTask = (row) => ({
   startedAt: row.startedAt,
   running: !!row.startedAt,
   completedAt: row.completedAt,
+  /**
+   * Quien la cerro. En un espacio compartido no tiene por que ser el dueño, y de aqui sale que la
+   * racha y los logros sean de quien trabaja. `null` en las abiertas.
+   */
+  completedBy: row.completedBy ?? null,
   createdAt: row.createdAt,
 })
 
