@@ -27,6 +27,22 @@ export const updateTask =
         : null
 
     /**
+     * Y con la hora, el DIA LOCAL. Es lo que cuenta la racha.
+     *
+     * Va aparte de `completedAt` porque son dos cosas distintas: la hora es un instante universal y
+     * el dia es del calendario de quien cerro. El cliente lo manda en `completedOn` con su fecha
+     * local, igual que ya manda `dueAt` con su hora local — el servidor nunca adivina la zona.
+     *
+     * El respaldo `completedAt.slice(0, 10)` es UTC y por tanto puede irse un dia hacia delante,
+     * pero solo aplica a un cliente viejo que no manda el campo: es mejor contar el dia de al lado
+     * que no contar nada, que es lo que pasaba antes con `due_date`.
+     */
+    const completedOn =
+      next.status === 'done'
+        ? (current.completedOn ?? patch.completedOn ?? completedAt.slice(0, 10))
+        : null
+
+    /**
      * Y con la hora, QUIEN la cerro. Se sella en el mismo movimiento por la misma razon: son el mismo
      * hecho, y separarlos dejaria una tarea cerrada sin dueño del merito.
      *
@@ -49,7 +65,7 @@ export const updateTask =
       })
     }
 
-    const saved = await tasks.update(userId, id, { ...next, completedAt, completedBy })
+    const saved = await tasks.update(userId, id, { ...next, completedAt, completedOn, completedBy })
 
     /**
      * UN evento por peticion, decidido comparando el antes con el despues.

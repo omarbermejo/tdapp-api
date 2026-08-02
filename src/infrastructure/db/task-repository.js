@@ -25,7 +25,7 @@ const TAGGED = `LEFT JOIN workspaces ws ON ws.id = tasks.workspace_id`
 
 const COLUMNS = `tasks.id, tasks.user_id, tasks.title, tasks.notes, tasks.size, tasks.minutes,
                  tasks.status, tasks.focus_area, tasks.icon, tasks.due_at, tasks.due_date,
-                 tasks.completed_at, tasks.completed_by, tasks.created_at,
+                 tasks.completed_at, tasks.completed_date, tasks.completed_by, tasks.created_at,
                  tasks.workspace_id, tasks.position,
                  tm.started_at, COALESCE(tm.elapsed_seconds, 0) AS elapsed_seconds,
                  ws.tag AS workspace_tag`
@@ -92,6 +92,8 @@ const toDomain = (row) =>
     startedAt: row.started_at,
     elapsedSeconds: row.elapsed_seconds,
     completedAt: row.completed_at,
+    /** El dia LOCAL en que se cerro. Es lo que agrupa la racha; ver la migracion. */
+    completedOn: row.completed_date,
     /** Quien la cerro. Puede no ser el dueño: en un espacio compartido cierra cualquier miembro. */
     completedBy: row.completed_by,
     createdAt: row.created_at,
@@ -142,7 +144,7 @@ export function createTaskRepository(db) {
    */
   const patch = db.prepare(`UPDATE tasks SET
     title = ?, notes = ?, size = ?, minutes = ?, status = ?, focus_area = ?, icon = ?,
-    due_at = ?, due_date = ?, completed_at = ?, completed_by = ?, workspace_id = ?
+    due_at = ?, due_date = ?, completed_at = ?, completed_date = ?, completed_by = ?, workspace_id = ?
     WHERE ${VISIBLE} AND id = ?`)
   /**
    * Cuantas tareas tiene la cuenta por estado, de toda su historia.
@@ -219,23 +221,30 @@ export function createTaskRepository(db) {
     /**
      * Cuantas tareas cerro el usuario cada dia, del mas reciente al mas viejo.
      *
-     * Agrupa por `due_date` y no por `completed_at`: `due_date` es el dia LOCAL que mando el cliente
-     * (texto 'YYYY-MM-DD'), mientras `completed_at` es un timestamp UTC. Con el segundo, cerrar algo a
-     * las 11 de la noche en Mexico contaria para el dia siguiente y la racha se rompaeria sola — es la
-     * misma razon por la que el resto del API compara texto en vez de adivinar zonas.
+     * Agrupa por `completed_date`: el dia LOCAL en que se cerro, que es literalmente lo que la racha
+     * dice contar.
+     *
+     * **Agrupaba por `due_date`, y ese era el bug.** El argumento de entonces era bueno —
+     * `completed_at` es UTC, asi que cerrar algo a las 11 de la noche en Mexico contaria para el dia
+     * siguiente — pero la salida elegida cambiaba un error de siete horas al dia por uno peor: el
+     * credito se iba al dia para el que la tarea estaba AGENDADA. Cerrar hoy cuatro tareas vencidas
+     * dejaba el dia de hoy en cero y la racha clavada.
+     *
+     * `completed_date` conserva las dos propiedades: es texto local, mandado por el cliente igual que
+     * `due_date`, y apunta al dia correcto. Ver la migracion `task_completed_date`.
      *
      * Los dias sin nada cerrado simplemente no salen; quien cuenta la racha ve el hueco.
      */
     async doneByDay(userId, { from, to }) {
       return db
-        .prepare(`SELECT due_date AS date, COUNT(*) AS done FROM tasks
+        .prepare(`SELECT completed_date AS date, COUNT(*) AS done FROM tasks
           WHERE user_id = ?
             AND status = 'done'
-            AND due_date IS NOT NULL
-            AND due_date >= ?
-            AND due_date <= ?
-          GROUP BY due_date
-          ORDER BY due_date DESC`)
+            AND completed_date IS NOT NULL
+            AND completed_date >= ?
+            AND completed_date <= ?
+          GROUP BY completed_date
+          ORDER BY completed_date DESC`)
         .all(userId, from, to)
     },
 
@@ -353,7 +362,7 @@ export function createTaskRepository(db) {
       patch.run(
         task.title, task.notes, task.size, task.minutes, task.status, task.focusArea,
         task.icon ?? null,
-        task.dueAt, task.dueDate, task.completedAt, task.completedBy, task.workspaceId,
+        task.dueAt, task.dueDate, task.completedAt, task.completedOn ?? null, task.completedBy, task.workspaceId,
         ...seen(userId), Number(id)
       )
       return toDomain(byId.get(userId, ...seen(userId), Number(id)))

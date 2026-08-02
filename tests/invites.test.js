@@ -60,6 +60,18 @@ const makeSpace = async (name, token = omar) =>
 const invite = async (workspaceId, body = {}, token = omar) =>
   (await (await call('POST', `/workspaces/${workspaceId}/invites`, { body, token })).json()).invite
 
+/**
+ * El dueño aprueba una solicitud. Es el segundo tiempo de entrar con un codigo ABIERTO.
+ *
+ * Existe porque `POST /join` con un codigo abierto ya no mete a nadie: deja una solicitud. Un codigo
+ * atado a un correo si entra directo, y por eso varios tests de aqui usan `{ email }`.
+ */
+const approve = async (workspaceId, personId, ok = true, token = omar) =>
+  call('POST', `/workspaces/${workspaceId}/requests/${personId}`, { body: { approve: ok }, token })
+
+/** El id de una cuenta, leyendo su propio perfil. Los tests solo tienen tokens. */
+const idOf = async (token) => (await (await call('GET', '/me', { token })).json()).user.id
+
 before(async () => {
   omar = await signUp('inv-omar@nexgen.mx', 'Omar')
   ana = await signUp('inv-ana@nexgen.mx', 'Ana')
@@ -123,8 +135,9 @@ test('un correo mal escrito se rechaza antes de crear nada', async () => {
 
 test('invitar y listar son del DUEÑO: un miembro recibe 404', async () => {
   const space = await makeSpace('Solo el dueño')
-  // Ana entra de verdad, por la puerta.
-  const abierta = await invite(space.id)
+  // Ana entra de verdad, por la puerta. Con un codigo NOMINAL: aqui lo que se prueba es el permiso
+  // del miembro, no la aprobacion — un codigo abierto obligaria a aprobar antes de llegar al grano.
+  const abierta = await invite(space.id, { email: 'inv-ana@nexgen.mx' })
   await call('POST', '/workspaces/join', { body: { code: abierta.code }, token: ana })
 
   assert.equal((await call('POST', `/workspaces/${space.id}/invites`, { token: ana })).status, 404)
@@ -135,22 +148,68 @@ test('invitar y listar son del DUEÑO: un miembro recibe 404', async () => {
 
 // --- aceptar -----------------------------------------------------------------------------------
 
-test('aceptar mete al miembro y CONSUME el codigo', async () => {
+test('un codigo ABIERTO deja una solicitud, y aprobarla mete al miembro y CONSUME el codigo', async () => {
   const space = await makeSpace('Se consume')
   const code = (await invite(space.id)).code
+  const anaId = await idOf(ana)
 
+  // Primer tiempo: pide entrar. Todavia NO es miembro.
   const [status, body] = await json(
     await call('POST', '/workspaces/join', { body: { code }, token: ana })
   )
   assert.equal(status, 200)
   assert.equal(body.workspace.name, 'Se consume')
+  assert.equal(body.joined, false, 'un codigo abierto no mete a nadie por si solo')
 
-  // El espacio ya sale en SU lista: es la prueba de que la membresia se escribio.
+  const [, antes] = await json(await call('GET', '/workspaces', { token: ana }))
+  assert.ok(!antes.workspaces.some((w) => w.id === space.id), 'todavia no esta dentro')
+
+  // El dueño la ve.
+  const [, pend] = await json(await call('GET', '/workspaces/requests', { token: omar }))
+  assert.ok(pend.requests.some((r) => r.person.id === anaId && r.workspace.id === space.id))
+
+  // Segundo tiempo: aprobar. Ahora si.
+  assert.equal((await approve(space.id, anaId)).status, 200)
   const [, mios] = await json(await call('GET', '/workspaces', { token: ana }))
   assert.ok(mios.workspaces.some((w) => w.id === space.id))
 
-  // Y el codigo ya no vale: de un solo uso.
+  // Y el codigo ya no vale: se consume al APROBAR, no al pedir.
   assert.equal((await call('POST', '/workspaces/join', { body: { code }, token: ana })).status, 404)
+})
+
+test('rechazar NO mete a nadie y deja el codigo vivo para otra persona', async () => {
+  const space = await makeSpace('Rechaza')
+  const code = (await invite(space.id)).code
+  const anaId = await idOf(ana)
+
+  await call('POST', '/workspaces/join', { body: { code }, token: ana })
+  const [status, body] = await json(await approve(space.id, anaId, false))
+  assert.equal(status, 200)
+  assert.equal(body.approved, false)
+
+  const [, mios] = await json(await call('GET', '/workspaces', { token: ana }))
+  assert.ok(!mios.workspaces.some((w) => w.id === space.id), 'rechazada no entra')
+
+  /*
+    El codigo sigue vivo, y eso es a proposito: uno abierto puede tener a varias personas detras, y
+    decirle que no a una no puede invalidarlo para las demas.
+  */
+  const [otra] = await json(await call('POST', '/workspaces/join', { body: { code }, token: ana }))
+  assert.equal(otra, 200)
+})
+
+test('un codigo con CORREO entra directo: el dueño ya dijo a quien', async () => {
+  const space = await makeSpace('Nominal')
+  const code = (await invite(space.id, { email: 'inv-ana@nexgen.mx' })).code
+
+  const [status, body] = await json(
+    await call('POST', '/workspaces/join', { body: { code }, token: ana })
+  )
+  assert.equal(status, 200)
+  assert.equal(body.joined, true, 'nominal no pasa por aprobacion')
+
+  const [, mios] = await json(await call('GET', '/workspaces', { token: ana }))
+  assert.ok(mios.workspaces.some((w) => w.id === space.id))
 })
 
 test('un codigo se acepta como lo teclee la gente', async () => {
@@ -168,7 +227,10 @@ test('un codigo se acepta como lo teclee la gente', async () => {
 
 test('estar ya dentro da 409, no un duplicado', async () => {
   const space = await makeSpace('Repetido')
-  await call('POST', '/workspaces/join', { body: { code: (await invite(space.id)).code }, token: ana })
+  // Nominal para estar dentro DE VERDAD: con un codigo abierto la primera llamada solo dejaria una
+  // solicitud, y la segunda daria 200 otra vez en vez del conflicto que este test busca.
+  const dentro = await invite(space.id, { email: 'inv-ana@nexgen.mx' })
+  await call('POST', '/workspaces/join', { body: { code: dentro.code }, token: ana })
   const res = await call('POST', '/workspaces/join', {
     body: { code: (await invite(space.id)).code },
     token: ana,
@@ -254,8 +316,10 @@ test('"personas con las que trabajaste antes" trae UNA fila por persona, la del 
   const fuerte = await makeSpace('Mucho trabajo')
   const co = await signUp('inv-colab@nexgen.mx', 'Colab')
 
+  // Nominales: lo que se prueba es el REPARTO de colaboradores, no la aprobacion.
   for (const space of [flojo, fuerte]) {
-    await call('POST', '/workspaces/join', { body: { code: (await invite(space.id)).code }, token: co })
+    const nominal = await invite(space.id, { email: 'inv-colab@nexgen.mx' })
+    await call('POST', '/workspaces/join', { body: { code: nominal.code }, token: co })
   }
   await call('POST', '/tasks', { body: { title: 'Una', workspaceId: flojo.id }, token: omar })
   for (const t of ['A', 'B', 'C']) {
@@ -332,7 +396,8 @@ test('no se puede invitar por id a alguien con quien no trabajas', async () => {
 
 test('invitar a quien YA esta dentro da 409 en vez de un codigo inutil', async () => {
   const space = await makeSpace('Ana ya entro')
-  await call('POST', '/workspaces/join', { body: { code: (await invite(space.id)).code }, token: ana })
+  const dentro = await invite(space.id, { email: 'inv-ana@nexgen.mx' })
+  await call('POST', '/workspaces/join', { body: { code: dentro.code }, token: ana })
 
   const [, lista] = await json(await call('GET', '/workspaces/collaborators', { token: omar }))
   const ella = lista.collaborators.find((c) => c.person.name === 'Ana')
