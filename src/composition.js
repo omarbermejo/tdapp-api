@@ -2,6 +2,7 @@ import { authenticate } from './application/authenticate.js'
 import { claimAvatar } from './application/claim-avatar.js'
 import { acceptInvite } from './application/accept-invite.js'
 import { createInvite } from './application/create-invite.js'
+import { countUnread } from './application/count-unread.js'
 import { createTask } from './application/create-task.js'
 import { createWorkspace } from './application/create-workspace.js'
 import { deleteAccount } from './application/delete-account.js'
@@ -15,6 +16,7 @@ import { getStreak } from './application/get-streak.js'
 import { getTaskCounts } from './application/get-task-counts.js'
 import { getToday } from './application/get-today.js'
 import { getWorkspace } from './application/get-workspace.js'
+import { listEvents } from './application/list-events.js'
 import { listTasks } from './application/list-tasks.js'
 import { listCollaborators } from './application/list-collaborators.js'
 import { listInvites } from './application/list-invites.js'
@@ -24,6 +26,8 @@ import { loginUser } from './application/login-user.js'
 import { loginWithIdentity } from './application/login-with-identity.js'
 import { orderTasks } from './application/order-tasks.js'
 import { previewInvite } from './application/preview-invite.js'
+import { readEvents } from './application/read-events.js'
+import { recordEvent } from './application/record-event.js'
 import { registerDevice } from './application/register-device.js'
 import { registerUser } from './application/register-user.js'
 import { resendCode } from './application/resend-code.js'
@@ -39,6 +43,7 @@ import { OTP_RULES } from './domain/otp.js'
 import { config } from './infrastructure/config.js'
 import { createAvatarRepository } from './infrastructure/db/avatar-repository.js'
 import { createDeviceRepository } from './infrastructure/db/device-repository.js'
+import { createEventRepository } from './infrastructure/db/event-repository.js'
 import { createInviteRepository } from './infrastructure/db/invite-repository.js'
 import { createMemberRepository } from './infrastructure/db/member-repository.js'
 import { createOtpRepository } from './infrastructure/db/otp-repository.js'
@@ -67,6 +72,7 @@ export function buildApp(overrides = {}) {
     invites: createInviteRepository(db),
     avatars: createAvatarRepository(db),
     devices: createDeviceRepository(db),
+    events: createEventRepository(db),
     otps: createOtpRepository(db),
     hasher: scryptHasher,
     tokens: createTokenService({ secret: settings.jwtSecret, expiresIn: settings.jwtExpiresIn }),
@@ -83,6 +89,14 @@ export function buildApp(overrides = {}) {
   }
   // El emisor de codigos es una dependencia mas: lo comparten el registro y el reenvio.
   deps.sendCode = sendVerificationCode(deps)
+  /**
+   * El registro de novedades es una DEPENDENCIA, no un caso de uso suelto: lo llaman crear, editar y
+   * borrar tarea, y ninguno deberia conocer ni la tabla ni el hub. Se arma aqui, como `sendCode`.
+   *
+   * `hub` entra por `overrides` y por defecto no existe: sin nadie escuchando, `record-event` solo
+   * escribe la fila. Eso es lo que hace que los quince archivos de tests no se enteren de los sockets.
+   */
+  deps.recordEvent = recordEvent(deps)
 
   const useCases = {
     // Lo usa requireAuth en cada request autenticado, no un endpoint.
@@ -113,6 +127,10 @@ export function buildApp(overrides = {}) {
     getStreak: getStreak(deps),
     getStats: getStats(deps),
     getTaskCounts: getTaskCounts(deps),
+
+    listEvents: listEvents(deps),
+    readEvents: readEvents(deps),
+    countUnread: countUnread(deps),
 
     listWorkspaces: listWorkspaces(deps),
     getWorkspace: getWorkspace(deps),

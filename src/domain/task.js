@@ -2,6 +2,19 @@ import { ValidationError } from './errors.js'
 import { FOCUS_AREAS } from './user.js'
 
 export const TASK_SIZE = ['quick', 'medium', 'deep']
+
+/**
+ * Las caras que puede llevar una tarea: los slugs de `assets/icons3d/` de la app.
+ *
+ * Catalogo cerrado y no patron libre, al reves que el avatar en su dia: aqui el backend SI puede
+ * decidir cuales existen, porque el set lo genera un script del repo y no crece por su cuenta. Lo que
+ * llega es un slug, nunca una imagen — los archivos viven en el bundle del cliente.
+ */
+export const TASK_ICONS = [
+  'academic', 'calendar', 'check', 'clock', 'creativity', 'graph-up', 'health', 'home',
+  'home-chrome', 'leaf', 'light', 'lightning', 'money', 'moon', 'relationships', 'trophy',
+  'user', 'work',
+]
 export const TASK_STATUS = ['pending', 'done']
 
 /** Minutos sugeridos por tamaño. La app los usa para el timer y la Live Activity. */
@@ -70,8 +83,16 @@ export function makeTask(input = {}, base = {}) {
     fields.workspaceId = 'Espacio no valido'
   }
 
+  /**
+   * La cara elegida a mano. null = "no elegi", y entonces la app la deriva de la clasificacion como
+   * ha hecho siempre. Por eso no cae en un default: un default borraria esa diferencia.
+   */
+  const icon = str(merged.icon) || null
+  if (icon && !TASK_ICONS.includes(icon)) fields.icon = `Opcion no valida: ${icon}`
+
   const task = {
     title,
+    icon,
     notes: notes || null,
     size: pick('size', TASK_SIZE, 'medium'),
     minutes,
@@ -95,6 +116,8 @@ export const toPublicTask = (row) => ({
   size: row.size,
   status: row.status,
   focusArea: row.focusArea,
+  /** El slug elegido a mano, o null para que la app lo derive de la clasificacion. */
+  icon: row.icon ?? null,
   workspaceId: row.workspaceId ?? null,
   /**
    * La clasificacion del espacio al que pertenece, para que la tarea la HEREDE.

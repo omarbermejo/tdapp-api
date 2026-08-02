@@ -508,6 +508,31 @@ test('un no miembro pidiendo el mapa de un espacio ajeno sigue viendo ceros', as
   assert.equal(body.byDay.find((d) => d.date === '2026-09-25')?.planned ?? 0, 0)
 })
 
+test('la lista dice de CUALES eres dueno, para poder ofrecer borrarlos', async () => {
+  // Sin esto el cliente no puede distinguir un espacio tuyo de uno al que te invitaron, y ofreceria
+  // borrar algo que el API contestaria con un 404 sobre lo que se esta viendo en pantalla.
+  const ana = await signUp('frontera-rol@nexgen.mx', 'Ana')
+  const { workspace } = await (
+    await call('POST', '/workspaces', { body: { name: 'De Omar', icon: 'work' }, token: auth })
+  ).json()
+  await joinAsMember(workspace.id, await idOf(ana))
+
+  const mio = (await (await call('GET', '/workspaces', { token: auth })).json()).workspaces
+  assert.equal(mio.find((w) => w.id === workspace.id).isOwner, true, 'el dueno')
+
+  const suyo = (await (await call('GET', '/workspaces', { token: ana })).json()).workspaces
+  assert.equal(suyo.find((w) => w.id === workspace.id).isOwner, false, 'la invitada')
+
+  // Y el alta lo dice bien de entrada: sale de una consulta que ya filtra por dueno.
+  const recien = await (
+    await call('POST', '/workspaces', { body: { name: 'Recien', icon: 'work' }, token: ana })
+  ).json()
+  assert.equal(recien.workspace.isOwner, true)
+
+  // Que el cliente pinte o no el boton es cosa suya: el API no se fia y sigue devolviendo 404.
+  assert.equal((await call('DELETE', `/workspaces/${workspace.id}`, { token: ana })).status, 404)
+})
+
 test('el modo general NO cambia: Omar no ve las tareas de Ana en su dia', async () => {
   // Es la decision que deja en paz al widget, a la Live Activity y a la racha.
   const ana = await signUp('frontera-general@nexgen.mx', 'Ana')

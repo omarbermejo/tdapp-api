@@ -104,6 +104,7 @@ if (!user) {
 console.log(`Sembrando ${user.email} (id ${user.id}) en ${DB_PATH}`)
 
 if (WIPE) {
+  db.prepare('DELETE FROM task_events WHERE user_id = ?').run(user.id)
   db.prepare('DELETE FROM tasks WHERE user_id = ?').run(user.id)
   db.prepare('DELETE FROM workspaces WHERE user_id = ?').run(user.id)
   db.prepare('DELETE FROM user_avatars WHERE user_id = ?').run(user.id)
@@ -200,6 +201,54 @@ for (let back = -21; back <= 119; back++) {
 }
 
 console.log(`  ${created} tareas (${closed} cerradas)`)
+
+// ---------------------------------------------------------------------------------------------
+// Novedades
+// ---------------------------------------------------------------------------------------------
+
+/*
+  Un rastro reciente para que la pantalla de novedades tenga algo que enseñar.
+
+  Solo de los ULTIMOS dias y no de los tres meses: el feed es "que ha pasado", no un log de auditoria,
+  y sembrar doscientas filas lo convertiria en una pared que nadie lee. Se escriben a mano y no
+  llamando a `recordEvent` por lo mismo que las tareas: hay que poder fecharlas en el pasado.
+
+  La mitad nace SIN leer aunque en el espacio personal todo lo tuyo naceria leido — es la unica forma
+  de poder mirar el globo de la campana encendido antes de que existan los espacios compartidos.
+*/
+const insertEvent = db.prepare(`INSERT INTO task_events
+  (user_id, actor_id, task_id, workspace_id, kind, task_title, meta, created_at, read_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+
+const recent = db
+  .prepare(`SELECT id, title, workspace_id, status, due_date FROM tasks
+            WHERE user_id = ? AND due_date <= ? ORDER BY due_date DESC LIMIT 14`)
+  .all(user.id, day(0))
+
+let events = 0
+/*
+  Se recorre AL REVES (`toReversed`) para insertar del evento mas viejo al mas nuevo.
+
+  El feed ordena por `id` DESC, no por fecha, y eso es correcto: dos eventos del mismo segundo
+  tendrian la misma marca y el orden entre ellos seria indefinido. Pero significa que los ids TIENEN
+  que ser cronologicos, que es lo que pasa solo en produccion. Sembrando del nuevo al viejo, el id
+  mas alto acababa siendo el evento mas antiguo y la pantalla salia del reves — datos imposibles que
+  hacian dudar del feed en vez del seed.
+*/
+for (const [i, task] of recent.toReversed().entries()) {
+  // Una hora distinta por fila para que el orden sea estable y "hace X" tenga variedad.
+  // `i` ahora crece hacia el presente, asi que la resta se cuenta desde el final.
+  const at = new Date(Date.now() - (recent.length - i) * 3 * 3600_000).toISOString()
+  const kind = task.status === 'done' ? (i % 5 === 0 ? 'edited' : 'completed') : 'created'
+  const meta = kind === 'edited' ? JSON.stringify({ changed: ['title'] }) : null
+
+  insertEvent.run(
+    user.id, user.id, task.id, task.workspace_id, kind, task.title, meta, at,
+    i >= recent.length - 3 ? null : at
+  )
+  events++
+}
+console.log(`  ${events} novedades (3 sin leer, para ver el globo de la campana)`)
 
 // ---------------------------------------------------------------------------------------------
 // Caras ganadas

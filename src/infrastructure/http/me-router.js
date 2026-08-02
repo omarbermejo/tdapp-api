@@ -81,6 +81,27 @@ export function createMeRouter({ useCases, tokens }) {
     res.json(await useCases.claimAvatar(req.userId, req.body ?? {}, req.query.date))
   })
 
+  /**
+   * Las novedades de tus tareas.
+   *
+   * `?before=` pagina hacia atras y `?since=` trae el hueco que te perdiste — el cliente usa el
+   * segundo al reconectar el socket, y por eso la pantalla funciona igual con el socket caido: la
+   * tabla es la fuente y el tiempo real solo se salta la espera.
+   */
+  router.get('/events', async (req, res) => {
+    res.json(await useCases.listEvents(req.userId, req.query))
+  })
+
+  /** Solo el numero del globo. El inicio lo pide en cada foco y no necesita ni una fila. */
+  router.get('/events/unread', async (req, res) => {
+    res.json(await useCases.countUnread(req.userId))
+  })
+
+  /** Sin `id` en el cuerpo, marca todas. Devuelve el contador ya recalculado. */
+  router.post('/events/read', async (req, res) => {
+    res.json(await useCases.readEvents(req.userId, req.body?.id ?? null))
+  })
+
   router.patch('/profile', async (req, res) => {
     res.json(await useCases.updateProfile(req.userId, req.body ?? {}))
   })

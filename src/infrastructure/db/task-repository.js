@@ -24,7 +24,7 @@ const TIMED = `LEFT JOIN task_timers tm ON tm.task_id = tasks.id AND tm.user_id 
 const TAGGED = `LEFT JOIN workspaces ws ON ws.id = tasks.workspace_id`
 
 const COLUMNS = `tasks.id, tasks.user_id, tasks.title, tasks.notes, tasks.size, tasks.minutes,
-                 tasks.status, tasks.focus_area, tasks.due_at, tasks.due_date,
+                 tasks.status, tasks.focus_area, tasks.icon, tasks.due_at, tasks.due_date,
                  tasks.completed_at, tasks.completed_by, tasks.created_at,
                  tasks.workspace_id, tasks.position,
                  tm.started_at, COALESCE(tm.elapsed_seconds, 0) AS elapsed_seconds,
@@ -86,6 +86,7 @@ const toDomain = (row) =>
     minutes: row.minutes,
     status: row.status,
     focusArea: row.focus_area,
+    icon: row.icon,
     dueAt: row.due_at,
     dueDate: row.due_date,
     startedAt: row.started_at,
@@ -105,8 +106,8 @@ export function createTaskRepository(db) {
   // `position` NO va aqui: una tarea nueva nace sin posicion, y eso es informacion — significa que
   // nadie la ha colocado a mano, asi que cae al final del dia por el ORDER BY de `listByUser`.
   const insert = db.prepare(`INSERT INTO tasks
-    (user_id, title, notes, size, minutes, status, focus_area, due_at, due_date, workspace_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    (user_id, title, notes, size, minutes, status, focus_area, icon, due_at, due_date, workspace_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
   /*
     Los cinco de la frontera. Se mueven JUNTOS a `VISIBLE` y eso no es orden, es correccion: abrir la
     lectura y dejar una escritura en `user_id = ?` hace que el UPDATE no encuentre fila, que la
@@ -140,7 +141,7 @@ export function createTaskRepository(db) {
    * separarlos dejaria una tarea cerrada sin dueño del merito por un frame.
    */
   const patch = db.prepare(`UPDATE tasks SET
-    title = ?, notes = ?, size = ?, minutes = ?, status = ?, focus_area = ?,
+    title = ?, notes = ?, size = ?, minutes = ?, status = ?, focus_area = ?, icon = ?,
     due_at = ?, due_date = ?, completed_at = ?, completed_by = ?, workspace_id = ?
     WHERE ${VISIBLE} AND id = ?`)
   /**
@@ -201,7 +202,7 @@ export function createTaskRepository(db) {
     async create(userId, task) {
       const { lastInsertRowid } = insert.run(
         userId, task.title, task.notes, task.size, task.minutes, task.status,
-        task.focusArea, task.dueAt, task.dueDate, task.workspaceId
+        task.focusArea, task.icon ?? null, task.dueAt, task.dueDate, task.workspaceId
       )
       // El bind del cronometro va PRIMERO: el LEFT JOIN se escribe antes que el WHERE. Ver `TIMED`.
       return toDomain(byId.get(userId, ...seen(userId), Number(lastInsertRowid)))
@@ -351,6 +352,7 @@ export function createTaskRepository(db) {
     async update(userId, id, task) {
       patch.run(
         task.title, task.notes, task.size, task.minutes, task.status, task.focusArea,
+        task.icon ?? null,
         task.dueAt, task.dueDate, task.completedAt, task.completedBy, task.workspaceId,
         ...seen(userId), Number(id)
       )

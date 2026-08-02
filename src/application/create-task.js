@@ -2,7 +2,7 @@ import { ValidationError } from '../domain/errors.js'
 import { makeTask, toPublicTask } from '../domain/task.js'
 
 export const createTask =
-  ({ tasks, workspaces }) =>
+  ({ tasks, workspaces, recordEvent }) =>
   async (userId, input) => {
     const task = makeTask(input)
 
@@ -22,5 +22,7 @@ export const createTask =
     }
 
     const saved = await tasks.create(userId, task)
+    // Despues de guardar, nunca antes: un evento de algo que no llego a escribirse seria mentira.
+    await recordEvent(saved, { actorId: userId, kind: 'created' })
     return { task: toPublicTask(saved) }
   }

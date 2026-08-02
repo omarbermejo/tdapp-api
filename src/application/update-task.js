@@ -1,8 +1,9 @@
 import { NotFoundError, ValidationError } from '../domain/errors.js'
+import { eventOfUpdate } from '../domain/event.js'
 import { makeTask, secondsSince, toPublicTask } from '../domain/task.js'
 
 export const updateTask =
-  ({ tasks, workspaces }) =>
+  ({ tasks, workspaces, recordEvent }) =>
   async (userId, id, patch = {}) => {
     const current = await tasks.findById(userId, id)
     if (!current) throw NotFoundError('Esa tarea no existe')
@@ -49,5 +50,14 @@ export const updateTask =
     }
 
     const saved = await tasks.update(userId, id, { ...next, completedAt, completedBy })
+
+    /**
+     * UN evento por peticion, decidido comparando el antes con el despues.
+     *
+     * Sale null cuando el PATCH no cambio nada que merezca contarse — un `status: 'pending'` sobre
+     * una tarea que ya estaba pendiente, por ejemplo — y entonces no se escribe fila. Un feed que
+     * anota peticiones en vez de cambios se llena de ruido y deja de mirarse.
+     */
+    await recordEvent(saved, { actorId: userId, ...(eventOfUpdate(current, saved) ?? {}) })
     return { task: toPublicTask(saved) }
   }

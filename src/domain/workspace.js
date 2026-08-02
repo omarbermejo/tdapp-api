@@ -1,5 +1,5 @@
 import { ValidationError } from './errors.js'
-import { ACCENT_COLOR, FOCUS_AREAS } from './user.js'
+import { ACCENT_COLOR, FOCUS_AREAS, isAccent } from './user.js'
 
 /**
  * Un espacio de trabajo: un nombre, un icono y un color para agrupar tareas por proyecto.
@@ -83,8 +83,10 @@ export function makeWorkspace(input = {}, base = {}) {
   const icon = str(merged.icon) || 'work'
   if (!WORKSPACE_ICONS.includes(icon)) fields.icon = `Opcion no valida: ${icon}`
 
+  // `isAccent` y no `includes`: el acento de un espacio admite el mismo color propio que el de una
+  // persona, y las dos validaciones tienen que moverse juntas o el alta rechaza lo que el perfil acepta.
   const accent = str(merged.accent) || 'olive'
-  if (!ACCENT_COLOR.includes(accent)) fields.accent = `Opcion no valida: ${accent}`
+  if (!isAccent(accent)) fields.accent = `Opcion no valida: ${accent}`
 
   const position = merged.position == null || merged.position === '' ? 0 : Number(merged.position)
   if (!(Number.isInteger(position) && position >= 0)) fields.position = 'Posicion no valida'
@@ -122,6 +124,18 @@ export const toPublicWorkspace = (row) => ({
   tag: row.tag ?? null,
   total: row.total ?? 0,
   done: row.done ?? 0,
+  /**
+   * Si lo ADMINISTRAS: renombrar, recolorear, invitar, borrar. `false` = te invitaron.
+   *
+   * Sale del API y no se deduce en el cliente porque el cliente no tiene con que: la lista trae tanto
+   * los tuyos como aquellos en los que solo eres miembro, y la unica otra fuente de rol es pedir los
+   * miembros de cada espacio — una peticion por fila para pintar una lista.
+   *
+   * SQLite no tiene booleanos: `w.user_id = ?` devuelve 1 o 0. El `!!` lo traduce aqui, una vez, en
+   * vez de dejar que cada consumidor se acuerde. En las filas que vienen de un create o un update no
+   * hay columna, y ahi `undefined` cae en `false` — es lo seguro: esconde una accion, no la ofrece.
+   */
+  isOwner: !!row.isOwner,
   createdAt: row.createdAt,
 })
 

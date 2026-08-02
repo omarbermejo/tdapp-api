@@ -313,3 +313,35 @@ test('el avatar guarda el memoji, lo borra con null y sobrevive a un parche de o
   const borrado = await call(url, 'PATCH', '/me/profile', { token, body: { avatar: null } })
   assert.equal((await borrado.json()).user.avatar, null)
 })
+
+test('el acento admite un color propio en hex, y SOBREVIVE a la relectura', async () => {
+  const token = await verifiedToken('hex-acento@nexgen.mx')
+
+  // Uno de los seis nombres nuevos: ensanchar el catalogo no rompe nada.
+  const nombrado = await call(url, 'PATCH', '/me/profile', { token, body: { accentColor: 'lilac' } })
+  assert.equal(nombrado.status, 200)
+  assert.equal((await nombrado.json()).user.accentColor, 'lilac')
+
+  /*
+    Y el hex de la opcion "Otro". La segunda mitad de este test es la que importa: el filtro de
+    lectura de `toPublicUser` existia para que un nombre retirado no llegara a la app, y con un hex
+    devolvia 'olive' en cada GET — el color se guardaba, la app lo pintaba optimista, y a la primera
+    recarga volvia al verde sin decir nada.
+  */
+  const propio = await call(url, 'PATCH', '/me/profile', { token, body: { accentColor: '#c17f86' } })
+  assert.equal(propio.status, 200)
+  assert.equal((await propio.json()).user.accentColor, '#c17f86', 'al escribir')
+
+  const releido = await call(url, 'GET', '/me', { token })
+  assert.equal((await releido.json()).user.accentColor, '#c17f86', 'y al LEER, que es donde fallaba')
+})
+
+test('lo que no es ni nombre ni hex se sigue rechazando', async () => {
+  const token = await verifiedToken('hex-malo@nexgen.mx')
+
+  for (const malo of ['rojo', '#ff', '#gggggg', 'rgb(1,2,3)', '#FF00AA ']) {
+    const res = await call(url, 'PATCH', '/me/profile', { token, body: { accentColor: malo } })
+    assert.equal(res.status, 400, `"${malo}" no deberia pasar`)
+    assert.ok((await res.json()).fields.accentColor)
+  }
+})

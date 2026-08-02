@@ -12,8 +12,14 @@ export function createWorkspaceRepository(db) {
   const insert = db.prepare(
     'INSERT INTO workspaces (user_id, name, icon, accent, position, tag) VALUES (?, ?, ?, ?, ?, ?)'
   )
-  /** El espacio si eres su DUEÑO. Es el permiso de administrar: renombrar, invitar, borrar. */
-  const owned = db.prepare(`SELECT ${COLUMNS} FROM workspaces WHERE user_id = ? AND id = ?`)
+  /**
+   * El espacio si eres su DUEÑO. Es el permiso de administrar: renombrar, invitar, borrar.
+   *
+   * `1 AS isOwner` literal y no calculado: esta consulta YA filtra por `user_id = ?`, asi que si
+   * devuelve fila la respuesta es si por construccion. Sin el, el alta y la edicion contestarian
+   * `isOwner: false` sobre un espacio que acabas de crear tu.
+   */
+  const owned = db.prepare(`SELECT ${COLUMNS}, 1 AS isOwner FROM workspaces WHERE user_id = ? AND id = ?`)
 
   /** Sin control de acceso. Solo para resolver un codigo de invitacion. Ver `findAny`. */
   const anyById = db.prepare(`SELECT ${COLUMNS} FROM workspaces WHERE id = ?`)
@@ -73,8 +79,23 @@ export function createWorkspaceRepository(db) {
    * contaria solo lo del dueño y el progreso de un equipo de tres se veria como el de uno. Lo que
    * acota el conteo es `t.workspace_id = w.id`, que ya es la pertenencia real de la tarea.
    */
+  /**
+   * `w.user_id = ? AS isOwner` es el unico campo que no sale de la tabla tal cual, y existe para que
+   * la app pueda pintar la accion de BORRAR solo donde funciona.
+   *
+   * La lista devuelve tambien los espacios en los que solo eres invitado (ver `MEMBER_OF`), asi que
+   * sin esto el cliente no puede distinguirlos: ofreceria borrar un espacio ajeno y el API contestaria
+   * 404 «Ese espacio no existe» sobre algo que se esta viendo en pantalla — el peor mensaje posible.
+   *
+   * Sale de la misma consulta y no de una nueva: `COUNTED` ya liga el `userId` para `MEMBER_OF`, y
+   * resolverlo por miembro seria una peticion por espacio para pintar una lista estatica.
+   *
+   * **El bind va PRIMERO**, antes que el de `MEMBER_OF`: los parametros posicionales se ligan en el
+   * orden del TEXTO del SQL, y el SELECT se escribe antes que el WHERE.
+   */
   const COUNTED = `SELECT
       w.id, w.name, w.icon, w.accent, w.position, w.tag, w.created_at AS createdAt,
+      w.user_id = ? AS isOwner,
       COUNT(t.id) AS total,
       COALESCE(SUM(t.status = 'done'), 0) AS done
     FROM workspaces w
@@ -100,7 +121,8 @@ export function createWorkspaceRepository(db) {
 
   return {
     async listWithCounts(userId) {
-      return withCounts.all(userId)
+      // Dos veces: el `isOwner` del SELECT y el `MEMBER_OF` del WHERE. Ver el docblock de COUNTED.
+      return withCounts.all(userId, userId)
     },
 
     /** Puedes TRABAJAR en el. Es lo que valida meter o mover una tarea a un espacio. */
@@ -126,7 +148,7 @@ export function createWorkspaceRepository(db) {
 
     /** Con `total` y `done`. Lo usa la pantalla de detalle; `findById` basta para validar un PATCH. */
     async findByIdWithCounts(userId, id) {
-      return oneWithCounts.get(userId, Number(id))
+      return oneWithCounts.get(userId, userId, Number(id))
     },
 
     /**

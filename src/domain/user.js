@@ -10,7 +10,39 @@ import { ValidationError } from './errors.js'
 export const FOCUS_AREAS = ['study', 'work', 'home', 'health', 'money', 'relationships', 'creativity']
 export const PEAK_ENERGY = ['morning', 'afternoon', 'night', 'varies']
 export const REMINDER_STYLE = ['gentle', 'firm', 'persistent']
-export const ACCENT_COLOR = ['forest', 'olive', 'leaf', 'clay', 'copper']
+/**
+ * Los colores con nombre. Los cinco primeros son los de la marca; los seis siguientes los deriva la
+ * app de un solo color base, pero aqui son once cadenas iguales — este lado no sabe de rampas.
+ *
+ * Ensanchar un catalogo es seguro y estrecharlo no: ninguna fila guardada se queda con un valor que
+ * el API ya no acepte. Es la misma regla con la que las clasificaciones crecieron a diez.
+ */
+export const ACCENT_COLOR = [
+  'forest',
+  'olive',
+  'leaf',
+  'clay',
+  'copper',
+  'rose',
+  'lilac',
+  'plum',
+  'sky',
+  'teal',
+  'amber',
+]
+
+/** El color propio de la opcion "Otro": `#rrggbb` en minusculas, ya normalizado por la app. */
+const HEX = /^#[0-9a-f]{6}$/
+
+/**
+ * Un acento valido es un nombre del catalogo O un hex.
+ *
+ * Se usa en los CUATRO sitios que tocan el acento —dos al escribir y dos al leer— y esa simetria no
+ * es opcional: el filtro de lectura existia para que un nombre retirado no llegara a la app, y con un
+ * hex libre ese mismo filtro devolvia `olive` en cada GET. O sea que el color se guardaba bien, la app
+ * lo pintaba optimista, y a la primera recarga volvia al verde sin decir nada.
+ */
+export const isAccent = (value) => ACCENT_COLOR.includes(value) || HEX.test(String(value))
 
 /**
  * Como entra la cuenta. 'oauth' solo existe para filas viejas cuyo proveedor no se pudo
@@ -129,7 +161,9 @@ export function createProfile(input = {}, current = DEFAULT_PROFILE) {
 
   const pick = (key, catalog) => {
     const value = has(key) ? str(input[key]) || current[key] : current[key]
-    if (!catalog.includes(value)) fields[key] = `Opcion no valida: ${value}`
+    // El acento admite ademas un hex propio; los demas catalogos son listas cerradas. Ver `isAccent`.
+    const ok = catalog === ACCENT_COLOR ? isAccent(value) : catalog.includes(value)
+    if (!ok) fields[key] = `Opcion no valida: ${value}`
     return value
   }
 
@@ -253,8 +287,9 @@ export const toPublicUser = (row) => ({
   reminderStyle: row.reminderStyle ?? DEFAULT_PROFILE.reminderStyle,
   reminderHour: row.reminderHour ?? DEFAULT_PROFILE.reminderHour,
   // Si un rename futuro deja un valor fuera del catalogo, sale el default en vez de un
-  // nombre que la app no sabe pintar. Los ya guardados los arregla su migracion.
-  accentColor: ACCENT_COLOR.includes(row.accentColor) ? row.accentColor : DEFAULT_PROFILE.accentColor,
+  // nombre que la app no sabe pintar. Los ya guardados los arregla su migracion. Un hex pasa: es un
+  // color completo, no un nombre que haya que resolver contra nada.
+  accentColor: isAccent(row.accentColor) ? row.accentColor : DEFAULT_PROFILE.accentColor,
   // Sin filtrar contra una lista, al reves que accentColor: aqui el catalogo vive en el bundle de
   // la app y este lado no puede saber cual es. Un nombre que esa version no tenga lo resuelve ella
   // con el mismo fallback que usa para null. Ver el docblock de AVATAR.
@@ -288,9 +323,9 @@ export const toPublicMember = (row) => ({
   id: row.id,
   name: row.name,
   avatar: row.avatar ?? null,
-  // El mismo filtro contra el catalogo que hace `toPublicUser`: un acento retirado saldria como un
-  // nombre que la app no sabe pintar.
-  accentColor: ACCENT_COLOR.includes(row.accentColor) ? row.accentColor : DEFAULT_PROFILE.accentColor,
+  // El mismo filtro que hace `toPublicUser`: un acento retirado saldria como un nombre que la app no
+  // sabe pintar. Y el mismo permiso para un hex.
+  accentColor: isAccent(row.accentColor) ? row.accentColor : DEFAULT_PROFILE.accentColor,
 })
 
 export const catalogs = {
