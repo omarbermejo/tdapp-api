@@ -1,6 +1,7 @@
 import { authenticate } from './application/authenticate.js'
 import { claimAvatar } from './application/claim-avatar.js'
 import { acceptInvite } from './application/accept-invite.js'
+import { decideRequest, listRequests } from './application/decide-request.js'
 import { createInvite } from './application/create-invite.js'
 import { countUnread } from './application/count-unread.js'
 import { createTask } from './application/create-task.js'
@@ -44,6 +45,7 @@ import { config } from './infrastructure/config.js'
 import { createAvatarRepository } from './infrastructure/db/avatar-repository.js'
 import { createDeviceRepository } from './infrastructure/db/device-repository.js'
 import { createEventRepository } from './infrastructure/db/event-repository.js'
+import { createRequestRepository } from './infrastructure/db/request-repository.js'
 import { createInviteRepository } from './infrastructure/db/invite-repository.js'
 import { createMemberRepository } from './infrastructure/db/member-repository.js'
 import { createOtpRepository } from './infrastructure/db/otp-repository.js'
@@ -70,6 +72,7 @@ export function buildApp(overrides = {}) {
     workspaces: createWorkspaceRepository(db),
     members: createMemberRepository(db),
     invites: createInviteRepository(db),
+    requests: createRequestRepository(db),
     avatars: createAvatarRepository(db),
     devices: createDeviceRepository(db),
     events: createEventRepository(db),
@@ -144,6 +147,8 @@ export function buildApp(overrides = {}) {
     revokeInvite: revokeInvite(deps),
     previewInvite: previewInvite(deps),
     acceptInvite: acceptInvite(deps),
+    listRequests: listRequests(deps),
+    decideRequest: decideRequest(deps),
     listMembers: listMembers(deps),
     listCollaborators: listCollaborators(deps),
 

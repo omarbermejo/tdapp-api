@@ -64,6 +64,19 @@ export function createWorkspaceRouter({ useCases, tokens }) {
     res.json(result)
   })
 
+  /**
+   * Quien pide entrar a algo mio. ANTES de `/:id/...`: 'requests' se comeria el hueco del id.
+   * Es la misma trampa que ya obligo a poner 'collaborators' y 'join' arriba.
+   */
+  router.get('/requests', async (req, res) => {
+    res.json(await useCases.listRequests(req.userId))
+  })
+
+  router.post('/:id/requests/:personId', async (req, res) => {
+    const approve = (req.body ?? {}).approve !== false
+    res.json(await useCases.decideRequest(req.userId, req.params.id, req.params.personId, approve))
+  })
+
   router.get('/:id/members', async (req, res) => {
     res.json(await useCases.listMembers(req.userId, req.params.id))
   })
