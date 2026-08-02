@@ -48,6 +48,34 @@ const VISIBLE = `(tasks.user_id = ?
   OR (tasks.workspace_id IS NOT NULL
       AND tasks.workspace_id IN (SELECT workspace_id FROM workspace_members WHERE user_id = ?)))`
 
+/**
+ * El alcance de una consulta que puede venir acotada a un espacio. Dos ramas, como `listByUser`.
+ *
+ * - **Sin espacio**: `user_id = ?`, exactamente como siempre. Es lo que deja intactos el widget, la
+ *   Live Activity, la racha y los logros, que es la decision de diseno de todo este trabajo.
+ * - **Con espacio**: TODO lo que vive ahi, sea de quien sea, si eres miembro.
+ *
+ * La segunda rama existe porque sin ella el espacio se contaba a medias: `user_id = ? AND
+ * workspace_id = ?` son *tus* tareas dentro del espacio, mientras el anillo de la card y la lista de
+ * tareas de esa misma pantalla ya cuentan las de todos. En un espacio compartido el mapa de calor
+ * decia un numero y la lista de debajo otro.
+ *
+ * No comprueba que el espacio exista: si no es tuyo, el EXISTS no encuentra nada y la respuesta sale
+ * en ceros. Es lo correcto — un 404 aqui diria si un id ajeno existe o no.
+ *
+ * Devuelve el fragmento y sus binds JUNTOS para que no puedan desincronizarse: uno de los dos casos
+ * liga un solo valor y el otro dos, y ese es el error tipico al copiar este patron.
+ */
+const spanning = (userId, workspaceId) =>
+  workspaceId
+    ? {
+        sql: `workspace_id = ?
+          AND EXISTS (SELECT 1 FROM workspace_members m
+                       WHERE m.workspace_id = tasks.workspace_id AND m.user_id = ?)`,
+        binds: [workspaceId, userId],
+      }
+    : { sql: 'user_id = ?', binds: [userId] }
+
 const toDomain = (row) =>
   row && {
     id: row.id,
@@ -221,15 +249,16 @@ export function createTaskRepository(db) {
      * Agrupa por `due_date` por lo mismo que las otras dos: es el dia LOCAL que mando el cliente.
      */
     async plannedByDay(userId, { from, to, workspaceId = null }) {
+      // Acotada a un espacio cuenta el espacio ENTERO, no tu parte de el. Ver `spanning`.
+      const scope = spanning(userId, workspaceId)
       return db
         .prepare(`SELECT due_date AS date, COUNT(*) AS planned FROM tasks
-          WHERE user_id = ?
+          WHERE ${scope.sql}
             AND due_date IS NOT NULL
             AND due_date >= ?
             AND due_date <= ?
-            AND (? IS NULL OR workspace_id = ?)
           GROUP BY due_date`)
-        .all(userId, from, to, workspaceId, workspaceId)
+        .all(...scope.binds, from, to)
     },
 
     /**
@@ -241,17 +270,18 @@ export function createTaskRepository(db) {
      * tamaño", que es una regla de dominio y no de SQL.
      */
     async doneStats(userId, { from, to, workspaceId = null }) {
+      // Igual que `plannedByDay`: dentro de un espacio se cuenta el trabajo de todos sus miembros.
+      const scope = spanning(userId, workspaceId)
       return db
         .prepare(`SELECT due_date AS date, focus_area AS focusArea, size, minutes, COUNT(*) AS done
           FROM tasks
-          WHERE user_id = ?
+          WHERE ${scope.sql}
             AND status = 'done'
             AND due_date IS NOT NULL
             AND due_date >= ?
             AND due_date <= ?
-            AND (? IS NULL OR workspace_id = ?)
           GROUP BY due_date, focus_area, size, minutes`)
-        .all(userId, from, to, workspaceId, workspaceId)
+        .all(...scope.binds, from, to)
     },
 
     async countByStatus(userId) {

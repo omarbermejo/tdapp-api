@@ -31,6 +31,11 @@ export const getStats =
      * estadisticas sirva para toda la cuenta y para un espacio suelto. `Number(...) || null` cubre de
      * una vez el ausente, el vacio y la basura no numerica.
      *
+     * **Con espacio se cuenta el espacio ENTERO, no tu parte de el**: el trabajo de todos sus
+     * miembros. Es la unica lectura que no miente cuando el espacio se comparte — el anillo de su card
+     * y la lista de tareas ya cuentan a todos, y un mapa de calor que solo contara lo tuyo daria un
+     * numero distinto sobre los mismos datos. Sin espacio no cambia nada: sigue siendo `user_id = ?`.
+     *
      * No se comprueba que el espacio exista: si no es tuyo o no existe, el filtro no encuentra nada y
      * la respuesta sale en ceros. Es lo correcto — un 404 aqui diria si un id ajeno existe o no.
      */

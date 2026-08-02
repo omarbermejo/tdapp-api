@@ -462,6 +462,52 @@ test('el anillo de un espacio compartido cuenta el trabajo de TODOS', async () =
   assert.equal(body.workspace.total, 2, 'con el filtro viejo por dueño esto habria dado 1')
 })
 
+test('el MAPA DE CALOR de un espacio compartido tambien cuenta el trabajo de todos', async () => {
+  // Es la coherencia que faltaba: el anillo y la lista ya contaban a todos, y /me/stats acotado a un
+  // espacio contaba solo lo tuyo. Sobre los mismos datos daban numeros distintos.
+  const ana = await signUp('frontera-mapa@nexgen.mx', 'Ana')
+  const { workspace } = await (
+    await call('POST', '/workspaces', { body: { name: 'Mapa', icon: 'work' }, token: auth })
+  ).json()
+  await joinAsMember(workspace.id, await idOf(ana))
+
+  const dia = '2026-09-24T12:00:00-06:00'
+  await call('POST', '/tasks', {
+    body: { title: 'Agenda de Omar', workspaceId: workspace.id, dueAt: dia },
+    token: auth,
+  })
+  await call('POST', '/tasks', {
+    body: { title: 'Agenda de Ana', workspaceId: workspace.id, dueAt: dia },
+    token: ana,
+  })
+
+  for (const [quien, token] of [['Omar', auth], ['Ana', ana]]) {
+    const stats = await (
+      await call('GET', `/me/stats?date=2026-09-24&workspaceId=${workspace.id}`, { token })
+    ).json()
+    const celda = stats.byDay.find((d) => d.date === '2026-09-24')
+    assert.equal(celda.planned, 2, `${quien} ve las dos: el mapa es del ESPACIO, no de su parte`)
+  }
+})
+
+test('un no miembro pidiendo el mapa de un espacio ajeno sigue viendo ceros', async () => {
+  // La rama nueva liga la membresia, asi que abrir el alcance no abrio la puerta.
+  const beto = await signUp('frontera-mapa-ajeno@nexgen.mx', 'Beto')
+  const { workspace } = await (
+    await call('POST', '/workspaces', { body: { name: 'Cerrado', icon: 'work' }, token: auth })
+  ).json()
+  await call('POST', '/tasks', {
+    body: { title: 'Privada', workspaceId: workspace.id, dueAt: '2026-09-25T12:00:00-06:00' },
+    token: auth,
+  })
+
+  const [status, body] = await json(
+    await call('GET', `/me/stats?date=2026-09-25&workspaceId=${workspace.id}`, { token: beto })
+  )
+  assert.equal(status, 200, 'ceros y no 404: un 404 diria si ese id existe')
+  assert.equal(body.byDay.find((d) => d.date === '2026-09-25')?.planned ?? 0, 0)
+})
+
 test('el modo general NO cambia: Omar no ve las tareas de Ana en su dia', async () => {
   // Es la decision que deja en paz al widget, a la Live Activity y a la racha.
   const ana = await signUp('frontera-general@nexgen.mx', 'Ana')
