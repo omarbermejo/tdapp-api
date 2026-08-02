@@ -50,14 +50,23 @@ const signUp = async (email, name) => {
   return (await verified.json()).token
 }
 
-/** Crea una tarea en un dia concreto y la cierra. Es lo que alimenta la racha. */
+/**
+ * Crea una tarea y la cierra COMO SI fuera ese dia. Es lo que alimenta la racha.
+ *
+ * El `completedOn` del PATCH es la pieza que hace honesto al test: la racha cuenta el dia en que
+ * cerraste algo, no el dia para el que estaba agendado, y sin este campo el test estaria simulando
+ * el reloj de la maquina en vez del gesto. Es exactamente lo que manda la app al marcar hecha.
+ */
 const closeOn = async (date, title, token = auth) => {
   const res = await call('POST', '/tasks', {
     body: { title, dueAt: `${date}T12:00:00-06:00` },
     token,
   })
   const { task } = await res.json()
-  await call('PATCH', `/tasks/${task.id}`, { body: { status: 'done' }, token })
+  await call('PATCH', `/tasks/${task.id}`, {
+    body: { status: 'done', completedOn: date },
+    token,
+  })
   return task.id
 }
 
