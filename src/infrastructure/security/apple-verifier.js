@@ -54,7 +54,7 @@ export const createAppleVerifier = ({ clientIds }) => {
       }
 
       const email = String(payload.email).toLowerCase()
-      const label = (String(name ?? '').trim() || email.split('@')[0]).slice(0, 40)
+      const label = (String(name ?? '').trim() || email.split('@')[0]).slice(0, 40).trim()
       return { email, name: label.length >= 2 ? label : 'Usuario' }
     },
   }
