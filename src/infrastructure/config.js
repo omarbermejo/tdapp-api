@@ -17,7 +17,8 @@ export const config = {
   jwtSecret: required('JWT_SECRET'),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '30d',
   corsOrigin: process.env.CORS_ORIGIN ?? '*',
-  // Los client IDs de Google que aceptamos en el aud del idToken (iOS, Android, web).
+  // Los client IDs de Google que aceptamos en el aud del idToken (iOS, Android, web). El de Android
+  // es el del IDE, que es distinto al de la build de produccion.
   googleClientIds: list('GOOGLE_CLIENT_IDS'),
   // En Apple el aud es el bundle id de la app (o el Services ID si algun dia hay web).
   appleClientIds: list('APPLE_CLIENT_IDS'),

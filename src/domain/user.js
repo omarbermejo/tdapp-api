@@ -278,7 +278,12 @@ export const stageOf = (row) =>
  * aqui, en un solo lugar. Nunca sale un hash de esta funcion.
  */
 export const toPublicUser = (row) => ({
-  id: row.id,
+  // El `onboardedAt` del INSERT es la fecha de alta, que pondria el stage en 'ready' desde el
+  // principio. `null` lo deja en 'onboarding', que es lo que se espera de una cuenta nueva.
+  ...row,
+  onboardedAt: row.onboardedAt && row.createdAt.getTime() === row.onboardedAt.getTime() ? null : row.onboardedAt,
+
+  id: row.id, // Sobrescribe el del spread, por si acaso.
   email: row.email,
   name: row.name,
   birthDate: row.birthDate ?? DEFAULT_PROFILE.birthDate,
@@ -302,7 +307,7 @@ export const toPublicUser = (row) => ({
    */
   activeWorkspace: row.activeWorkspace ?? null,
   emailVerified: !!row.emailVerifiedAt,
-  onboardedAt: row.onboardedAt ?? null,
+  // `onboardedAt` ya viene corregido del `...row` de arriba.
   authProvider: row.authProvider ?? 'password',
   // El paso lo decide el servidor: la app lo pinta, no lo calcula.
   stage: stageOf(row),
